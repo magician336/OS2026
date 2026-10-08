@@ -134,7 +134,7 @@ make qemu
 打开 WSL 终端，执行：
 
 ```sh
-cd '/mnt/d/code_warehouse/Curriculum/Computer System/OS2026/code/labcodes/lab1'
+cd code/labcodes/lab1
 printf 'PWD: '; pwd
 use-qemu 4.1.1
 command -v riscv64-unknown-elf-gcc
@@ -188,7 +188,7 @@ OS2026/report/images/member-c-make-qemu.jpg
 **终端 A：**
 
 ```sh
-cd '/mnt/d/code_warehouse/Curriculum/Computer System/OS2026/code/labcodes/lab1'
+cd code/labcodes/lab1
 use-qemu 4.1.1
 make debug
 ```
@@ -198,7 +198,7 @@ make debug
 **终端 B：**
 
 ```sh
-cd '/mnt/d/code_warehouse/Curriculum/Computer System/OS2026/code/labcodes/lab1'
+cd code/labcodes/lab1
 use-qemu 4.1.1
 make gdb
 ```

@@ -23,8 +23,7 @@
 我在 WSL Ubuntu 的 zsh 环境中完成 OS2026 Lab1。请检查并修正当前用户配置中的 use-qemu 函数，使它能够稳定选择 QEMU 4.1.1，并保留已有的 QEMU 7.0.0 选择能力。直接修改实际配置文件，不要只给出示例代码。修复后验证新 shell 和当前 shell 的行为，并说明任何环境限制。
 
 [RELY]
-- WSL 用户 shell 为 zsh，函数位于 ~/.zshrc。
-- QEMU 可执行文件位于 /opt/qemu-4.1.1/bin/qemu-system-riscv64 和 /opt/qemu-7.0.0/bin/qemu-system-riscv64。
+- Lab1 在 WSL 中通过 use-qemu 选择 QEMU 版本。
 - 当前函数使用 zsh 的 path 数组，并在函数内部去重 PATH。
 - 需要使用 QEMU 4.1.1 执行 Lab1 的 make qemu 和 make debug。
 
@@ -42,7 +41,7 @@
 - 保留原配置备份，不修改 Lab1 仓库代码。
 ```
 
-**事实来源：** WSL `~/.zshrc`、`/opt/qemu-4.1.1/bin`、`/opt/qemu-7.0.0/bin` 的实际检查。
+**事实来源：** WSL 中 use-qemu 的实际行为和 Lab1 的 QEMU 版本输出。
 **验证映射：** 两个版本的 `--version`、`command -v`、重复切换和错误参数测试。
 
 ## Prompt 2：固定 Lab1 的 QEMU 4.1.1 构建环境
@@ -111,7 +110,7 @@
 请为 Lab1 成员 C 编写具体截图操作指南。每张截图都要给出 WSL 命令、终端窗口要求、截图内容、建议文件名和报告引用方式。使用 QEMU 4.1.1，并覆盖版本检查、编译成功、make qemu 输出、cons_putc GDB 调用栈和 ecall 反汇编。
 
 [RELY]
-- Lab1 实际目录是 /mnt/d/code_warehouse/Curriculum/Computer System/OS2026/code/labcodes/lab1。
+- Lab1 代码目录是 `OS2026/code/labcodes/lab1`。
 - Makefile 提供 make、make qemu、make debug 和 make gdb。
 - make debug 在 localhost:1234 等待 GDB；make gdb 连接 bin/kernel。
 - 报告图片必须放入 OS2026/report/images/，使用相对链接。
@@ -166,7 +165,7 @@
 请把成员 C 的报告草稿和五张图片提交到 OS2026 的 lab1 分支并推送到 origin/lab1。草稿应放在 report/member-c-sbi-console-draft.md，图片放在 report/images/；不要把草稿覆盖到 report/report.md，也不要提交构建产物。
 
 [RELY]
-- Git 仓库是 D:/code_warehouse/Curriculum/Computer System/OS2026。
+- Git 仓库是 `OS2026`。
 - 当前分支是 lab1，远程名是 origin。
 - report/report.md 是总报告模板，report/prompt.md 是提示词汇总。
 - 远程分支可能领先本地；推送被拒绝时先 fetch 并安全 rebase，禁止强制推送。
