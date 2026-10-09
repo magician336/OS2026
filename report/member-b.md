@@ -19,14 +19,7 @@ riscv64-elf-gdb bin/kernel
 (gdb) target remote localhost:1234
 ```
 
-10 月 8 日的自动化执行环境禁止程序监听本地端口，因此先用 GDB 管道目标完成记录，让 QEMU 的 GDB stub 走标准输入输出：
-
-```gdb
-file /Users/txjliu/2026fall/OS/code/labcodes/lab1/bin/kernel
-target remote | qemu-system-riscv64 -machine virt -display none -serial file:/tmp/lab1-console.log -monitor none -bios default -kernel /Users/txjliu/2026fall/OS/code/labcodes/lab1/bin/ucore.img -gdb stdio -S
-```
-
-10 月 9 日在 macOS 终端中用上面的两个窗口和 `localhost:1234` 再次验证，并拍摄下文的真实终端截图。后续使用的 GDB 命令依次为 `info registers pc sp`、`x/6i $pc`、`si 6`、`break *0x80200000`、`continue`、`p/x &bootstacktop` 和 `si`。自动化运行的原始输出见 [GDB 完整记录](./images/gdb-transcript.txt)。
+10 月 9 日在 macOS 终端中用上面的两个窗口和 `localhost:1234` 完成验证，并拍摄下文的真实终端截图。使用的 GDB 命令包括 `info registers pc sp`、`x/6i $pc`、`si 6`、`break *0x80200000`、`continue`、`p/x &bootstacktop` 和 `si`。
 
 ## 练习 1：理解内核入口
 
@@ -53,6 +46,6 @@ target remote | qemu-system-riscv64 -machine virt -display none -serial file:/tm
 
 - 练习 1、练习 2 均已通过本机实际调试完成，具体地址和寄存器值以本文实测为准，不沿用指导书截图中的旧版本数值。
 - 仓库现有 `make debug` 的 QEMU 参数需由成员 A 核对 QEMU 11 兼容性；当前 `make gdb` 还写死了 `riscv64-unknown-elf-gdb`，而 Homebrew 提供的命令名是 `riscv64-elf-gdb`。
-- 报告中的 PNG 配图是 10 月 9 日在 macOS 终端实际调试时截取的画面。另保留自动化运行的[原始 GDB 文字记录](./images/gdb-transcript.txt)、[原参数启动日志](./images/qemu-loader.log)、[修正参数启动日志](./images/qemu-kernel.log)；此前渲染的 SVG 调试记录也保留作补充材料。
+- 报告中的三张 PNG 配图是 10 月 9 日在 macOS 终端实际调试时截取的画面，分别证明复位地址到 OpenSBI、命中内核入口，以及内核栈设置。
 
 参考：[Lab 1 练习](http://oslab.mobisys.top/lab2026/_book/lab1/lab1_2_1_exercise.html)、[GDB 指导](http://oslab.mobisys.top/lab2026/_book/lab1/lab1_4_gdb.html)、[链接脚本说明](http://oslab.mobisys.top/lab2026/_book/lab1/lab1_3_2_linkerscript.html)。
