@@ -1,9 +1,38 @@
-# Lab1 成员A Prompt 汇总
+# Lab1 Prompt 汇总
 
-## Prompt 1：阅读代码结构和构建流程
+## 小组信息
+
+| 成员 | 学号 | 负责范围 |
+|---|---:|---|
+| 梁家瑞 | 2411046 | 工程结构、构建流程和 QEMU 运行 |
+| 刘蔚霖 | 2412727 | 启动流程、练习 1/2 和 GDB 验证 |
+| 李培涛 | 2411041 | SBI/console、报告整合和交付检查 |
+
+本文件按成员和任务整理本实验实际使用的提示词。这些提示词用于辅助完成成员 A、B、C 的代码阅读、调试、报告撰写和交付整理；为便于教师审阅，保留任务意图并统一为 `[PROMPT]`、`[RELY]`、`[GUARANTEE]`、`[SPECIFICATION]` 四段式。
+
+---
+
+## 成员 A：代码结构与构建流程
+
+### Prompt A-1：阅读代码结构和构建流程
 
 ```text
-我现在负责操作系统 Lab1 小组分工中的成员A任务。请阅读 OS2026/code/labcodes/lab1 中的代码，重点分析 Makefile、tools/kernel.ld、kern/init/entry.S、kern/init/init.c 以及最小内核运行流程，帮助我理解 Lab1 的代码结构、构建流程、链接过程和 QEMU 运行流程。
+[PROMPT]
+我负责 OS2026 Lab1 的工程结构、构建流程和 QEMU 运行部分。请阅读 code/labcodes/lab1 中的 Makefile、tools/kernel.ld、kern/init/entry.S 和 kern/init/init.c，整理一份能够解释源码、构建、链接和启动关系的分析。
+
+[RELY]
+- 以 code/labcodes/lab1 中的当前源码和 Makefile 为准。
+- 重点关注 kern_entry、kern_init、BASE_ADDRESS、bin/kernel 和 bin/ucore.img。
+
+[GUARANTEE]
+- 不修改 Lab1 源码，不引入无关功能。
+- 区分源码确认、命令实测和环境限制。
+- 未执行的 QEMU 或测试命令不得写成成功。
+
+[SPECIFICATION]
+- 说明交叉编译、链接脚本、objcopy 和 QEMU 的关系。
+- 说明入口地址、栈设置、C 语言初始化和启动输出之间的顺序。
+- 给出实际验证命令、关键输出和报告截图建议。
 ```
 
 ## AI 使用说明
@@ -12,35 +41,83 @@
 
 ---
 
-# Lab1 成员 B Prompt 示例
+## 成员 B：启动流程与 GDB 验证
 
-以下三条为成员 B 任务的脱敏重写示例，并非原始会话记录。实验结论以独立报告和真实终端截图为准。
+以下三条提示词实际用于成员 B 的代码分析、GDB 验证和报告撰写，现按报告提交格式统一整理。实验结论必须以实际源码、命令输出和 GDB 截图为准。
 
-## Prompt 1：分析启动代码
+### Prompt B-1：分析内核入口代码
 
 ```text
-请阅读 Lab1 的入口汇编、链接脚本和初始化函数，解释内核入口地址、启动栈的设置，以及从汇编入口进入 C 函数的过程。结论要对应源码，不要虚构运行结果。
+[PROMPT]
+请阅读 OS2026/code/labcodes/lab1/kern/init/entry.S、tools/kernel.ld、kern/init/init.c 和 kern/mm/memlayout.h，解释内核入口、启动栈和从汇编进入 C 函数的过程。
+
+[RELY]
+- kernel.ld 使用 ENTRY(kern_entry)，并将内核基地址设置为 0x80200000。
+- entry.S 中包含 la sp, bootstacktop 和 tail kern_init。
+- KSTACKSIZE 由 KSTACKPAGE 和 PGSIZE 决定；栈从高地址向低地址增长。
+
+[GUARANTEE]
+- 只依据当前源码解释指令和地址，不使用未核对的旧版本结论。
+- 不修改 entry.S、kernel.ld 或初始化代码。
+- 区分源码结论和需要 GDB 实测的寄存器值。
+
+[SPECIFICATION]
+- 解释 kern_entry、la sp、bootstacktop、tail kern_init 和 kern_init 的关系。
+- 说明每个结论应使用的源码位置、反汇编或寄存器命令。
+- 对无法从源码确认的具体地址标记为待验证。
 ```
 
-## Prompt 2：规划 GDB 观察
+### Prompt B-2：规划 GDB 启动流程验证
 
 ```text
-请设计使用 QEMU 和 GDB 观察 RISC-V 启动流程的操作步骤，覆盖复位地址、OpenSBI、内核入口断点和栈指针变化。说明每一步应记录什么，并指出哪些终端画面适合作为真实截图。
+[PROMPT]
+请为 OS2026 Lab1 设计一套可复现的 QEMU/GDB 启动流程验证，覆盖复位地址、OpenSBI、kern_entry、内核栈和 kern_init，并给出适合放入报告的截图步骤。
+
+[RELY]
+- 正式验证优先使用 QEMU 4.1.1 和项目指定的 RISC-V 工具链。
+- QEMU 复位 ROM、OpenSBI 固件和 Lab1 内核是不同层次，不能混为同一份源码。
+- Makefile 提供 make debug 和 make gdb；GDB 远程端口为 localhost:1234。
+
+[GUARANTEE]
+- 只记录实际执行过的命令、地址、寄存器和输出。
+- 如果使用其他 QEMU 或工具链版本，必须标记为补充环境，并说明版本差异。
+- 不把单张 QEMU 输出图当作完整调用链或寄存器证据。
+
+[SPECIFICATION]
+- 记录连接暂停 QEMU、检查 pc/sp、x/6i $pc、si、断点 0x80200000 和读取 bootstacktop 的命令。
+- 验证 0x1000 复位 ROM、OpenSBI 入口和 0x80200000 内核入口之间的控制权转移。
+- 每张截图说明命令、可观察结果、文件名和报告结论；截图必须来自实际运行。
 ```
 
-## Prompt 3：整理独立报告
+### Prompt B-3：整理成员 B 独立报告
 
 ```text
-请依据实际调试输出与截图撰写成员 B 的独立实验报告，回答 Lab1 的两个练习，解释关键指令与启动地址，并区分已验证结果、环境差异和仍需其他成员处理的问题。
+[PROMPT]
+请依据成员 B 实际的源码阅读、QEMU/GDB 输出和截图，撰写 Lab1 成员 B 独立报告，回答练习 1 和练习 2，并为最终总报告提供可复核材料。
+
+[RELY]
+- 报告范围是 entry.S、kernel.ld、kern_init、QEMU 复位 ROM、OpenSBI 和 GDB 验证。
+- 需要解释 la sp、tail kern_init、0x1000、0x80000000、0x80200000 和控制权转移。
+- 报告图片只能引用 OS2026/report/images/ 中实际存在的文件。
+
+[GUARANTEE]
+- 每个地址、寄存器值和测试结论都要标明源码、命令或截图来源。
+- 明确区分正式 QEMU 4.1.1 验证、其他版本补充验证和未验证内容。
+- 不覆盖总报告，不伪造姓名、模型、测试结果或评分结果。
+
+[SPECIFICATION]
+- 按实验模板组织实验环境、练习答案、实现过程、验证证据和限制。
+- 将提示词、命令、截图文件名和结论建立一一对应关系。
+- 最终输出可以合并到 OS2026/report/report.md，并保留待补信息标记。
 ```
 
 ---
 
-# Lab1 成员 C Prompt 汇总
+## 成员 C：SBI/console、截图与交付
 
-以下提示词整理自本次会话中实际提出的任务和后续修正，覆盖 SBI/console 理解、QEMU 环境、截图整理、草稿交付和答辩学习。姓名、学号、日期和模型版本等未知信息不在提示词中虚构。
+以下提示词实际用于成员 C 的 SBI/console 理解、QEMU 环境记录、截图整理、草稿交付和答辩学习，并按报告提交格式整理。
 
-## Prompt 1：修正 WSL 中的 `use-qemu`
+### Prompt C-1：修正 WSL 中的 `use-qemu`
 
 ```text
 [PROMPT]
@@ -68,7 +145,7 @@
 **事实来源：** WSL 中 use-qemu 的实际行为和 Lab1 的 QEMU 版本输出。
 **验证映射：** 两个版本的 `--version`、`command -v`、重复切换和错误参数测试。
 
-## Prompt 2：固定 Lab1 的 QEMU 4.1.1 构建环境
+### Prompt C-2：固定 Lab1 的 QEMU 4.1.1 构建环境
 
 ```text
 [PROMPT]
@@ -93,7 +170,7 @@
 **事实来源：** WSL QEMU 配置、OS2026 Makefile 和实验交付要求。
 **验证映射：** 检查文档中的 use-qemu 4.1.1 文本，并确认 OS2026 工作区无额外修改。
 
-## Prompt 3：整理成员 C 的 SBI/console 报告草稿
+### Prompt C-3：整理成员 C 的 SBI/console 报告草稿
 
 ```text
 [PROMPT]
@@ -127,7 +204,7 @@
 **事实来源：** 五个 Lab1 源文件、Makefile、课程实验手册和项目报告模板。
 **验证映射：** 源码行号核对、调用链截图、QEMU 输出截图和 GDB 调用栈/反汇编截图。
 
-## Prompt 4：编写可执行的截图操作指南
+### Prompt C-4：编写可执行的截图操作指南
 
 ```text
 [PROMPT]
@@ -155,7 +232,7 @@
 **事实来源：** Lab1 Makefile、实际 WSL 命令和当前截图。
 **验证映射：** 每张图片的命令输出、截图文件存在性和报告相对链接。
 
-## Prompt 5：审查、重命名并归档截图
+### Prompt C-5：审查、重命名并归档截图
 
 ```text
 [PROMPT]
@@ -182,11 +259,11 @@
 **事实来源：** 现有图片、截图视觉检查、OS2026/report/images/ 和 Git 状态。
 **验证映射：** 文件哈希一致、报告链接可定位、构建产物未进入暂存区。
 
-## Prompt 6：提交成员 C 草稿和图片到 GitHub
+### Prompt C-6：提交成员 C 草稿和图片到 GitHub
 
 ```text
 [PROMPT]
-请把成员 C 的报告草稿和五张图片提交到 OS2026 的 lab1 分支并推送到 origin/lab1。草稿应放在 report/member-c-sbi-console-draft.md，图片放在 report/images/；不要把草稿覆盖到 report/report.md，也不要提交构建产物。
+请把成员 C 的报告草稿和五张图片提交到 OS2026 的 lab1 分支并推送到 origin/lab1。草稿作为成员 C 的独立材料提交，图片放在 report/images/；不要把草稿覆盖到 report/report.md，也不要提交构建产物。
 
 [RELY]
 - Git 仓库是 `OS2026`。
@@ -209,7 +286,7 @@
 **事实来源：** OS2026 Git 状态、远程地址、成员 C 草稿和图片目录。
 **验证映射：** 提交文件清单、非强制 push 输出、最终远程 SHA 和干净工作区。
 
-## Prompt 7：以答辩模式教授成员 C 的 Lab1
+### Prompt C-7：以答辩模式教授成员 C 的 Lab1
 
 ```text
 [PROMPT]
@@ -236,10 +313,10 @@
 **事实来源：** 实际 Lab1 源码、Makefile、成员 C 报告草稿、五张截图和用户在本会话中的回答。
 **验证映射：** 函数链口述、a7/a0 寄存器问答、GDB `bt 6`、`ecall` 反汇编和 QEMU 输出截图。
 
-## 迭代记录
+### 统一迭代记录
 
 - 初始任务是修复 WSL 中 `use-qemu`，后续补充了项目文档中的 QEMU 4.1.1 约束。
-- 成员 C 明确要求只处理 SBI/console 理解、报告草稿和截图交付；草稿最终放在 `report/member-c-sbi-console-draft.md`，不覆盖 `report/report.md`。
+- 成员 C 明确要求只处理 SBI/console 理解、报告草稿和截图交付；草稿作为独立材料整理，不覆盖 `report/report.md`。
 - 截图整理过程中先审查可用性，再用有意义的文件名复制到 `report/images/`，并清理 `bin/`、`obj/` 构建产物。
 - GitHub 推送遇到远程领先时，先 fetch/rebase，再推送，禁止 force push。
 - 答辩教学从解释 `vprintfmt` 开始，逐步覆盖回调、`putdat`、SBI 寄存器、OpenSBI/QEMU 分层和证据边界。
