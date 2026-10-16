@@ -1,5 +1,6 @@
 #include <default_pmm.h>
 #include <best_fit_pmm.h>
+#include <buddy_pmm.h>
 #include <defs.h>
 #include <error.h>
 #include <memlayout.h>
@@ -34,7 +35,11 @@ static void check_alloc_page(void);
 
 // init_pmm_manager - initialize a pmm_manager instance
 static void init_pmm_manager(void) {
+#ifdef USE_BUDDY_PMM
+    pmm_manager = &buddy_pmm_manager;
+#else
     pmm_manager = &default_pmm_manager;
+#endif
     cprintf("memory management: %s\n", pmm_manager->name);
     pmm_manager->init();
 }
@@ -61,7 +66,56 @@ size_t nr_free_pages(void) {
     return pmm_manager->nr_free_pages();
 }
 
-//lab2 function1 YOUR CODE
+//lab2 function1 2411046
+static void page_init(void) {
+    extern char end[];
+    uint64_t mem_base = get_memory_base();
+    uint64_t mem_size = get_memory_size();
+    uint64_t mem_end;
+    uintptr_t pages_end_pa;
+    uintptr_t free_start;
+    uintptr_t free_end;
+
+    if (mem_base == 0 || mem_size == 0 ||
+        mem_size > ~(uint64_t)0 - mem_base) {
+        panic("invalid physical memory range from device tree");
+    }
+
+    va_pa_offset = PHYSICAL_MEMORY_OFFSET;
+    mem_end = mem_base + mem_size;
+    if (mem_end > PHYSICAL_MEMORY_END) {
+        mem_end = PHYSICAL_MEMORY_END;
+    }
+    if (mem_end <= DRAM_BASE) {
+        panic("physical memory does not contain DRAM");
+    }
+
+    npage = PPN(mem_end);
+    if (npage <= nbase) {
+        panic("no physical pages available");
+    }
+
+    /* One descriptor is reserved for each page in [DRAM_BASE, mem_end). */
+    pages = (struct Page *)ROUNDUP((uintptr_t)end, PGSIZE);
+    for (size_t i = 0; i < npage - nbase; i++) {
+        pages[i].flags = 0;
+        SetPageReserved(&pages[i]);
+        pages[i].property = 0;
+        set_page_ref(&pages[i], 0);
+        list_init(&pages[i].page_link);
+    }
+
+    pages_end_pa = PADDR((uintptr_t)pages +
+                         (npage - nbase) * sizeof(struct Page));
+    free_start = ROUNDUP(pages_end_pa, PGSIZE);
+    free_end = ROUNDDOWN((uintptr_t)mem_end, PGSIZE);
+
+    cprintf("physical memory map: memory: 0x%016lx, [%016lx, %016lx].\n",
+            mem_size, mem_base, mem_end - 1);
+    if (free_start < free_end) {
+        init_memmap(pa2page(free_start), PPN(free_end - free_start));
+    }
+}
 
 /* pmm_init - initialize the physical memory management */
 void pmm_init(void) {

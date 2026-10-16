@@ -1,3 +1,6 @@
-# Build outputs
-/code/**/bin/
-/code/**/obj/
+**/bin/
+**/obj/
+.gdb.in
+.qemu.out
+proj*-handin.tar.gz
+*.log

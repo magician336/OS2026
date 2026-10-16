@@ -43,4 +43,3 @@ bool
 is_kernel_panic(void) {
     return is_panic;
 }
-
