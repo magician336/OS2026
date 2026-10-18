@@ -37,7 +37,9 @@ static void check_alloc_page(void);
 static void init_pmm_manager(void) {
 #ifdef USE_BUDDY_PMM
     pmm_manager = &buddy_pmm_manager;
-#else
+#elif USE_BEST_FIT_PMM
+    pmm_manager = &best_fit_pmm_manager;
+#else 
     pmm_manager = &default_pmm_manager;
 #endif
     cprintf("memory management: %s\n", pmm_manager->name);
