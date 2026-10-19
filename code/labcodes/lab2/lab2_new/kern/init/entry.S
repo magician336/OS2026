@@ -57,10 +57,12 @@ bootstacktop:
 # 分配 4KiB 内存给预设的三级页表
 boot_page_table_sv39:
     # 0xffffffff_c0000000 map to 0x80000000 (1G)
-    # 前 511 个页表项均设置为 0 ，因此 V=0 ，意味着是空的(unmapped)
-    .zero 8 * 511
-    # 设置最后一个页表项，PPN=0x80000，标志位 VRWXAD 均为 1
-    .quad (0x80000 << 10) | 0xcf # VRWXAD
+    # 分页刚开启时 PC 仍是物理地址，所以先为 0x80000000-0xbfffffff
+    # 建立恒等映射；同时将高地址 0xffffffffc0000000 映射到同一物理范围。
+    .zero 8 * 2
+    .quad (0x80000 << 10) | 0xcf # VPN[2]=2: identity mapping
+    .zero 8 * (511 - 3)
+    .quad (0x80000 << 10) | 0xcf # VPN[2]=511: high mapping
 
     .global boot_hartid
 boot_hartid:
