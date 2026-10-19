@@ -262,6 +262,90 @@ best_fit_check(void) {
     #endif
 }
 
+// 附加测试使用独立描述符，暂存并恢复真实空闲区；不改动框架检查函数。
+static void extra_check_list(void) {
+    size_t total = 0, blocks = 0;
+    struct Page *previous = NULL;
+    for (list_entry_t *le = list_next(&free_list); le != &free_list;
+         le = list_next(le)) {
+        struct Page *page = le2page(le, page_link);
+        assert(PageProperty(page) && page->property > 0);
+        assert(list_prev(list_next(le)) == le);
+        assert(list_next(list_prev(le)) == le);
+        if (previous != NULL) {
+            assert(previous + previous->property < page);
+        }
+        previous = page;
+        total += page->property;
+        assert(++blocks <= 40);
+    }
+    assert(total == nr_free);
+}
+
+static void extra_reset(struct Page *sample, size_t n) {
+    best_fit_init();
+    for (size_t i = 0; i < n; i++) {
+        sample[i].flags = 0;
+        SetPageReserved(&sample[i]);
+    }
+    best_fit_init_memmap(sample, n);
+    assert(best_fit_alloc_pages(n) == sample);
+    assert(nr_free == 0);
+}
+
+static void best_fit_extra_check(void) {
+    free_area_t saved = free_area;
+    struct Page sample[40];
+    extra_reset(sample, 40);
+    best_fit_free_pages(sample + 1, 3);
+    best_fit_free_pages(sample + 6, 5);
+    best_fit_free_pages(sample + 12, 8);
+    best_fit_free_pages(sample + 24, 5);
+    extra_check_list();
+    assert(nr_free == 21);
+    // 总页数够用，但最大的连续块只有8页。
+    assert(best_fit_alloc_pages(9) == NULL);
+    assert(best_fit_alloc_pages(22) == NULL);
+    assert(nr_free == 21);
+
+    // 5页块优于8页块；同尺寸时选择地址较低的5页块。
+    assert(best_fit_alloc_pages(4) == sample + 6);
+    assert(PageProperty(sample + 10) && sample[10].property == 1);
+    assert(best_fit_alloc_pages(3) == sample + 1);
+    assert(best_fit_alloc_pages(5) == sample + 24);
+    assert(best_fit_alloc_pages(2) == sample + 12);
+    assert(nr_free == 7);
+    assert(best_fit_alloc_pages(7) == NULL);
+    assert(nr_free == 7);
+    extra_check_list();
+
+    extra_reset(sample, 40);
+    best_fit_free_pages(sample + 5, 3);
+    best_fit_free_pages(sample + 10, 4);
+    best_fit_free_pages(sample + 8, 2); // 同时连接前后空闲块。
+    assert(nr_free == 9 && sample[5].property == 9);
+    extra_check_list();
+    assert(best_fit_alloc_pages(9) == sample + 5);
+    assert(nr_free == 0);
+
+    best_fit_free_pages(sample + 8, 4);
+    best_fit_free_pages(sample + 4, 4);  // 仅向后合并。
+    assert(sample[4].property == 8);
+    best_fit_free_pages(sample + 12, 4); // 仅向前合并。
+    assert(sample[4].property == 12 && nr_free == 12);
+    extra_check_list();
+
+    free_area = saved;
+    assert(list_prev(list_next(&free_list)) == &free_list);
+    assert(list_next(list_prev(&free_list)) == &free_list);
+    cprintf("[Best-Fit extra] choice/tie/split/fragmentation/merge: PASS\n");
+}
+
+static void best_fit_check_all(void) {
+    best_fit_check();
+    best_fit_extra_check();
+}
+
 const struct pmm_manager best_fit_pmm_manager = {
     .name = "best_fit_pmm_manager",
     .init = best_fit_init,
@@ -269,5 +353,5 @@ const struct pmm_manager best_fit_pmm_manager = {
     .alloc_pages = best_fit_alloc_pages,
     .free_pages = best_fit_free_pages,
     .nr_free_pages = best_fit_nr_free_pages,
-    .check = best_fit_check,
+    .check = best_fit_check_all,
 };

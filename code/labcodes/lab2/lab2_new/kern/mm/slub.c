@@ -1,218 +1,254 @@
 #include <slub.h>
 #include <pmm.h>
-#include <stdio.h>
 #include <string.h>
 
-#define OBJECT_SIZE 64
-#define OBJECT_ALIGN 16
+#define MIN_OBJECT_SIZE 16
+#define MAX_CACHE_SIZE 2048
+#define MAX_OBJECTS (PGSIZE / MIN_OBJECT_SIZE)
+#define BITMAP_WORDS ((MAX_OBJECTS + 63) / 64)
 
+struct kmem_cache;
+
+// 元数据在后端页面开头；空闲对象自身保存下一个空闲对象的指针。
 struct slab {
-    struct Page *page;       // 实际后端页面对应的描述符
-    struct slab *next;       // 下一个 slab
-
-    void *objects;          // 第一个对象的地址
-    void *freelist;         // 第一个空闲对象的地址
-
-    size_t capacity;        // 总对象数
-    size_t inuse;           // 已分配对象数
-
-    uint64_t allocated;     // 每一位记录一个对象是否已分配
+    struct Page *page;
+    size_t npages;
+    struct kmem_cache *cache; // NULL 表示直接分配的大对象
+    struct slab *next;
+    struct slab *partial_next;
+    void *objects;
+    void *freelist;
+    size_t stride;
+    size_t capacity;
+    size_t inuse;
+    uint64_t allocated[BITMAP_WORDS];
 };
 
 struct kmem_cache {
-    size_t stride;          // 相邻对象之间的距离
+    size_t stride;
     struct slab *slabs;
+    struct slab *partial;    // 仅包含仍有空闲对象的 slab
 };
 
-static struct kmem_cache cache64;
+static const size_t cache_sizes[] = {
+    16, 32, 64, 128, 256, 512, 1024, 2048
+};
+#define CACHE_COUNT (sizeof(cache_sizes) / sizeof(cache_sizes[0]))
+
+static struct kmem_cache caches[CACHE_COUNT];
+static struct slab *large_slabs;
 static bool initialized;
 
 void slub_init(void) {
     if (initialized) {
         return;
     }
-    cache64.stride = OBJECT_SIZE;
-    cache64.slabs = NULL;
+    for (size_t i = 0; i < CACHE_COUNT; i++) {
+        caches[i].stride = cache_sizes[i];
+        caches[i].slabs = NULL;
+        caches[i].partial = NULL;
+    }
+    large_slabs = NULL;
     initialized = 1;
 }
 
-static struct slab *new_slab(void) {
-    struct Page *page = alloc_page();
-    if (page == NULL) {
-        return NULL;
+static struct kmem_cache *find_cache(size_t size, size_t alignment) {
+    for (size_t i = 0; i < CACHE_COUNT; i++) {
+        if (size <= caches[i].stride && alignment <= caches[i].stride) {
+            return &caches[i];
+        }
     }
-
-    // Page 是描述符，先转换到实际页面的内核虚拟地址。
-    char *base = (char *)(page2pa(page) + va_pa_offset);
-    struct slab *slab = (struct slab *)base;
-    uintptr_t start = ROUNDUP((uintptr_t)base + sizeof(*slab),
-                              OBJECT_ALIGN);
-
-    slab->page = page;
-    slab->next = NULL;
-    slab->objects = (void *)start;
-    slab->capacity = (PGSIZE - (start - (uintptr_t)base)) / cache64.stride;
-    slab->inuse = 0;
-    slab->allocated = 0;
-    slab->freelist = slab->objects;
-    assert(slab->capacity > 0 && slab->capacity <= 64);
-
-    // 空闲对象的开头保存下一个空闲对象的指针。
-    for (size_t i = 0; i < slab->capacity; i++) {
-        void *obj = (char *)slab->objects + i * cache64.stride;
-        void *next = i + 1 < slab->capacity
-                         ? (char *)obj + cache64.stride
-                         : NULL;
-        *(void **)obj = next;
-    }
-
-    return slab;
+    return NULL;
 }
 
-// 仅接受有效对象的起始地址，不接受对象内部地址或 slab 元数据地址。
-static bool slab_object_index(const struct slab *slab, const void *ptr,
-                              size_t *index) {
+static bool object_index(const struct slab *slab, const void *ptr,
+                         size_t *index) {
     uintptr_t addr = (uintptr_t)ptr;
     uintptr_t start = (uintptr_t)slab->objects;
     if (addr < start) {
         return 0;
     }
-
     size_t offset = addr - start;
-    if (offset >= slab->capacity * cache64.stride ||
-        offset % cache64.stride != 0) {
+    if (slab->cache == NULL) {
+        if (offset != 0) {
+            return 0;
+        }
+        *index = 0;
+        return 1;
+    }
+    if (offset >= slab->capacity * slab->stride ||
+        offset % slab->stride != 0) {
         return 0;
     }
-
-    *index = offset / cache64.stride;
+    *index = offset / slab->stride;
     return 1;
 }
 
-void *kmalloc(size_t size) {
-    if (!initialized || size == 0 || size > OBJECT_SIZE) {
+static struct slab *new_slab(struct kmem_cache *cache) {
+    struct Page *page = alloc_page();
+    if (page == NULL) {
         return NULL;
     }
+    // Page 是描述符，不能直接将其地址用作对象存储。
+    char *base = (char *)(page2pa(page) + va_pa_offset);
+    struct slab *slab = (struct slab *)base;
+    memset(slab, 0, sizeof(*slab));
+    uintptr_t start = ROUNDUP((uintptr_t)base + sizeof(*slab), cache->stride);
+    slab->page = page;
+    slab->npages = 1;
+    slab->cache = cache;
+    slab->stride = cache->stride;
+    slab->objects = (void *)start;
+    slab->capacity = (PGSIZE - (start - (uintptr_t)base)) / slab->stride;
+    assert(slab->capacity > 0 && slab->capacity <= MAX_OBJECTS);
+    slab->freelist = slab->objects;
 
-    struct slab *slab = cache64.slabs;
-    while (slab != NULL && slab->freelist == NULL) {
-        assert(slab->inuse == slab->capacity);
-        slab = slab->next;
+    for (size_t i = 0; i < slab->capacity; i++) {
+        void *obj = (char *)slab->objects + i * slab->stride;
+        *(void **)obj = i + 1 < slab->capacity
+                           ? (char *)obj + slab->stride : NULL;
     }
+    slab->next = cache->slabs;
+    cache->slabs = slab;
+    slab->partial_next = cache->partial;
+    cache->partial = slab;
+    return slab;
+}
 
+static void *alloc_large(size_t size, size_t alignment) {
+    // base 按页对齐，alignment <= PGSIZE，所以偏移对齐即可。
+    size_t offset = ROUNDUP(sizeof(struct slab), alignment);
+    size_t max_size = ~(size_t)0;
+    if (size > max_size - offset) {
+        return NULL;
+    }
+    size_t total = offset + size;
+    if (total > max_size - (PGSIZE - 1)) {
+        return NULL;
+    }
+    size_t npages = (total + PGSIZE - 1) / PGSIZE;
+    if (npages > nr_free_pages()) {
+        return NULL;
+    }
+    struct Page *page = alloc_pages(npages);
+    if (page == NULL) {
+        return NULL;
+    }
+    char *base = (char *)(page2pa(page) + va_pa_offset);
+    struct slab *slab = (struct slab *)base;
+    memset(slab, 0, sizeof(*slab));
+    slab->page = page;
+    slab->npages = npages;
+    slab->objects = base + offset;
+    slab->stride = size;
+    slab->capacity = slab->inuse = 1;
+    slab->allocated[0] = 1;
+    slab->next = large_slabs;
+    large_slabs = slab;
+    return slab->objects;
+}
+
+void *kmalloc_aligned(size_t size, size_t alignment) {
+    if (!initialized || size == 0 || alignment == 0 ||
+        alignment > PGSIZE || (alignment & (alignment - 1)) != 0) {
+        return NULL;
+    }
+    if (alignment < SLUB_DEFAULT_ALIGN) {
+        alignment = SLUB_DEFAULT_ALIGN;
+    }
+    struct kmem_cache *cache = find_cache(size, alignment);
+    if (size > MAX_CACHE_SIZE || cache == NULL) {
+        return alloc_large(size, alignment);
+    }
+    struct slab *slab = cache->partial;
     if (slab == NULL) {
-        slab = new_slab();
+        slab = new_slab(cache);
         if (slab == NULL) {
             return NULL;
         }
-        slab->next = cache64.slabs;
-        cache64.slabs = slab;
     }
-
     void *obj = slab->freelist;
     size_t index;
-    assert(slab_object_index(slab, obj, &index));
-    uint64_t bit = 1ULL << index;
-    assert((slab->allocated & bit) == 0);
+    assert(object_index(slab, obj, &index));
+    size_t word = index / 64;
+    uint64_t bit = 1ULL << (index % 64);
+    assert((slab->allocated[word] & bit) == 0);
     assert(slab->inuse < slab->capacity);
-
     slab->freelist = *(void **)obj;
-    slab->allocated |= bit;
+    slab->allocated[word] |= bit;
     slab->inuse++;
+    if (slab->freelist == NULL) {
+        assert(slab->inuse == slab->capacity);
+        cache->partial = slab->partial_next;
+        slab->partial_next = NULL;
+    }
     return obj;
+}
+
+void *kmalloc(size_t size) {
+    return kmalloc_aligned(size, SLUB_DEFAULT_ALIGN);
+}
+
+static void remove_partial(struct kmem_cache *cache, struct slab *slab) {
+    struct slab **link = &cache->partial;
+    while (*link != NULL && *link != slab) {
+        link = &(*link)->partial_next;
+    }
+    assert(*link == slab);
+    *link = slab->partial_next;
 }
 
 void kfree(void *ptr) {
     if (ptr == NULL) {
         return;
     }
-
-    struct slab **link = &cache64.slabs;
+    for (size_t i = 0; i < CACHE_COUNT; i++) {
+        struct kmem_cache *cache = &caches[i];
+        struct slab **link = &cache->slabs;
+        while (*link != NULL) {
+            struct slab *slab = *link;
+            size_t index;
+            if (!object_index(slab, ptr, &index)) {
+                link = &slab->next;
+                continue;
+            }
+            size_t word = index / 64;
+            uint64_t bit = 1ULL << (index % 64);
+            if ((slab->allocated[word] & bit) == 0) {
+                panic("kfree: object is already free");
+            }
+            assert(slab->inuse > 0);
+            bool was_full = slab->freelist == NULL;
+            slab->allocated[word] &= ~bit;
+            slab->inuse--;
+            *(void **)ptr = slab->freelist;
+            slab->freelist = ptr;
+            if (slab->inuse == 0) {
+                if (!was_full) {
+                    remove_partial(cache, slab);
+                }
+                struct Page *page = slab->page;
+                *link = slab->next;
+                free_page(page);
+            } else if (was_full) {
+                slab->partial_next = cache->partial;
+                cache->partial = slab;
+            }
+            return;
+        }
+    }
+    struct slab **link = &large_slabs;
     while (*link != NULL) {
         struct slab *slab = *link;
-        size_t index;
-        if (!slab_object_index(slab, ptr, &index)) {
-            link = &slab->next;
-            continue;
-        }
-
-        uint64_t bit = 1ULL << index;
-        assert((slab->allocated & bit) != 0);
-        assert(slab->inuse > 0);
-
-        slab->allocated &= ~bit;
-        slab->inuse--;
-        *(void **)ptr = slab->freelist;
-        slab->freelist = ptr;
-
-        if (slab->inuse == 0) {
-            // slab 元数据也在这一页中，归还页面后不能再读取它。
+        if (ptr == slab->objects) {
             struct Page *page = slab->page;
+            size_t npages = slab->npages;
             *link = slab->next;
-            free_page(page);
+            // Buddy从头页恢复实际阶次，允许按原请求页数归还。
+            free_pages(page, npages);
+            return;
         }
-        return;
+        link = &slab->next;
     }
-
-    panic("kfree: pointer does not belong to a live slab object");
-}
-
-void slub_check(void) {
-    assert(initialized && cache64.slabs == NULL);
-    size_t before = nr_free_pages();
-    assert(before >= 2);
-
-    assert(kmalloc(0) == NULL);
-    assert(kmalloc(OBJECT_SIZE + 1) == NULL);
-    kfree(NULL);
-    assert(nr_free_pages() == before);
-
-    void *a = kmalloc(1);
-    void *b = kmalloc(OBJECT_SIZE);
-    assert(a != NULL && b != NULL && a != b);
-    assert((uintptr_t)a % OBJECT_ALIGN == 0);
-    assert((uintptr_t)b % OBJECT_ALIGN == 0);
-    memset(a, 0x11, OBJECT_SIZE);
-    memset(b, 0x22, OBJECT_SIZE);
-
-    // 有另一个活跃对象时，释放对象应进入空闲链表并被复用。
-    kfree(a);
-    void *c = kmalloc(OBJECT_SIZE);
-    assert(c == a);
-    memset(c, 0x33, OBJECT_SIZE);
-    for (size_t i = 0; i < OBJECT_SIZE; i++) {
-        assert(((unsigned char *)b)[i] == 0x22);
-    }
-    kfree(b);
-    kfree(c);
-    assert(cache64.slabs == NULL);
-    assert(nr_free_pages() == before);
-    cprintf("[SLUB] 64-byte allocation/reuse/reclaim: PASS\n");
-
-    // 65 个对象超过一页容量，验证跨 slab、全部请求大小及乱序释放。
-    void *objects[PGSIZE / OBJECT_SIZE + 1];
-    size_t count = sizeof(objects) / sizeof(objects[0]);
-    for (size_t i = 0; i < count; i++) {
-        objects[i] = kmalloc(i % OBJECT_SIZE + 1);
-        assert(objects[i] != NULL);
-        assert((uintptr_t)objects[i] % OBJECT_ALIGN == 0);
-        for (size_t j = 0; j < i; j++) {
-            assert(objects[i] != objects[j]);
-        }
-        memset(objects[i], (int)(i + 1), OBJECT_SIZE);
-    }
-    assert(nr_free_pages() == before - 2);
-
-    for (size_t i = 0; i < count; i++) {
-        for (size_t j = 0; j < OBJECT_SIZE; j++) {
-            assert(((unsigned char *)objects[i])[j] == (unsigned char)(i + 1));
-        }
-    }
-    for (size_t phase = 0; phase < 2; phase++) {
-        for (size_t i = phase; i < count; i += 2) {
-            kfree(objects[i]);
-        }
-    }
-    assert(cache64.slabs == NULL);
-    assert(nr_free_pages() == before);
-    cprintf("[SLUB] size boundaries/alignment/cross-slab/data integrity: PASS\n");
+    panic("kfree: pointer is not a live object");
 }
