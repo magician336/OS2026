@@ -1,5 +1,6 @@
 **/bin/
 **/obj/
+.codegraph/
 .gdb.in
 .qemu.out
 proj*-handin.tar.gz

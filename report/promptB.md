@@ -73,16 +73,16 @@
 先做 Best-Fit 页分配器。它和 First-Fit 的区别很简单：First-Fit 找到第一个够大的空闲块就用；Best-Fit 会把所有够大的空闲块都看一遍，选出最小的那个，尽量少浪费空间。
 例如要分配 5 页，现在有 4 页、10 页、6 页三个空闲块。First-Fit 可能选 10 页；Best-Fit 会选 6 页，分配 5 页后留下 1 页。
 一、先看懂接口和现成实现
-打开 [pmm.h](/Users/txjliu/2026fall/OS/labcode/lab2/kern/mm/pmm.h)，里面的 pmm_manager 规定了一个分配器必须提供什么操作：
+打开 `OS2026/code/labcodes/lab2/lab2_new/kern/mm/pmm.h`，里面的 pmm_manager 规定了一个分配器必须提供什么操作：
 - init()：初始化空闲链表和空闲页数。
 - init_memmap(base, n)：把一段物理页登记为空闲区。
 - alloc_pages(n)：分配至少 n 个连续页。
 - free_pages(base, n)：释放一段连续页。
 - nr_free_pages()：返回空闲页总数。
 - check()：运行分配器自检。
-然后读 [default_pmm.c](/Users/txjliu/2026fall/OS/labcode/lab2/kern/mm/default_pmm.c)。它已经展示了链表维护、切分空闲块和释放时合并相邻块的做法。Best-Fit 可以沿用这些页面状态规则，主要区别在分配时如何选块。
+然后读 `OS2026/code/labcodes/lab2/lab2_new/kern/mm/default_pmm.c`。它已经展示了链表维护、切分空闲块和释放时合并相邻块的做法。Best-Fit 可以沿用这些页面状态规则，主要区别在分配时如何选块。
 二、在 best_fit_pmm.c 完成这些操作
-文件位置：[best_fit_pmm.c](/Users/txjliu/2026fall/OS/labcode/lab2/kern/mm/best_fit_pmm.c)
+文件位置：`OS2026/code/labcodes/lab2/lab2_new/kern/mm/best_fit_pmm.c`
 1. 维护自己的状态：准备一个空闲链表和一个 nr_free 计数。空闲块的头页用 property 记录块大小，并设置 PageProperty。
 2. 初始化空闲区：对传入的每个页面清除旧状态，再把整段登记为一个空闲块，更新空闲页数。
 3. 分配页面：遍历空闲链表，记住所有 property >= n 的块中最小的那个。找到后从块头分配 n 页；若块还有剩余，把剩下的页面登记成新的空闲块。找不到就返回 NULL。
@@ -93,14 +93,14 @@
 当前块起点 + 当前块的页数 == 后一个块起点
 现有的 basic_check() 和 best_fit_check() 是框架检查，不要修改它们。
 三、让内核真正使用 Best-Fit
-目前 [pmm.c](/Users/txjliu/2026fall/OS/labcode/lab2/kern/mm/pmm.c) 的选择逻辑是：定义 USE_BUDDY_PMM 就用 Buddy，否则用 First-Fit。你需要增加 Best-Fit 的选择路径，并保留 Buddy 路径，例如按下面的优先关系处理：
+目前 `OS2026/code/labcodes/lab2/lab2_new/kern/mm/pmm.c` 的选择逻辑是：定义 USE_BUDDY_PMM 就用 Buddy，否则用 First-Fit。你需要增加 Best-Fit 的选择路径，并保留 Buddy 路径，例如按下面的优先关系处理：
 定义 USE_BUDDY_PMM     → Buddy
 定义 USE_BEST_FIT_PMM  → Best-Fit
 都没定义               → First-Fit
 选对分配器后，pmm_manager->check() 才会运行对应分配器的检查。仓库里的 test_best_fit() 还会检查当前是否确实选中了 best_fit_pmm_manager。
 四、在终端里验证
 在终端进入：
-cd /Users/txjliu/2026fall/OS/labcode/lab2
+cd OS2026/code/labcodes/lab2/lab2_new
 先编译：
 make clean
 make DEFS=-DUSE_BEST_FIT_PMM
@@ -137,7 +137,7 @@ SLUB 需要按对象大小管理 cache/slab：有空位就从对应 slab 取一�
 
 我看了当前版本。下面按当前行号说具体怎么改；行号会随着插入代码而变化。现在还不能通过检查，主要问题是链表插入函数同时改了块大小和计数，导致后续账目不一致。
 1. 改 insert_free_block()：只负责链表
-在 [best_fit_pmm.c 第 16–41 行 (line 16)](/Users/txjliu/2026fall/OS/labcode/lab2/kern/mm/best_fit_pmm.c:16)，删除所有 base->property = 1 和 nr_free++。这个函数只负责按地址插入：
+在 `best_fit_pmm.c` 第 16–41 行，删除所有 `base->property = 1` 和 `nr_free++`。这个函数只负责按地址插入：
 static void
 insert_free_block(struct Page *base) {
     if (list_empty(&free_list)) {
@@ -267,7 +267,7 @@ const struct pmm_manager best_fit_pmm_manager = {
 };
 这样 .check 能调用已有的测试函数，.nr_free_pages 能提供 nr_free_pages() 所需的总数。
 6. 让 pmm.c 选择 Best-Fit
-在 [pmm.c 第 38–42 行 (line 38)](/Users/txjliu/2026fall/OS/labcode/lab2/kern/mm/pmm.c:38) 加一个分支：
+在 `pmm.c` 第 38–42 行加一个分支：
 #ifdef USE_BUDDY_PMM
     pmm_manager = &buddy_pmm_manager;
 #elif defined(USE_BEST_FIT_PMM)

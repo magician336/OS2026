@@ -1,6 +1,28 @@
 # Lab2 Prompt 记录
 
-本文件只记录成员 A 用于修改、润色实验报告结构的提示词。没有使用 AI 生成或修改 Lab2 源代码。
+本文件记录成员 A 的报告整理提示词和成员 C 的集成核验提示词。成员 B 的完整协作提示词记录保存在 `report/promptB.md`。代码生成、测试和报告整理的事实边界以实际提交和运行记录为准。
+
+## Prompt C-1：集成与验证
+
+```text
+[PROMPT]
+作为 lab2 成员 C，基于当前 OS2026/code/labcodes/lab2/lab2_new 代码，整合成员 A 的 page_init/Buddy System 与成员 B 的 Best-Fit/SLUB，检查 pmm_manager 接口、管理器选择、Makefile 接入和报告交付结构。
+
+[RELY]
+- 现有 pmm.c、pmm.h、default_pmm.c、best_fit_pmm.c、buddy_pmm.c、slub.c 和对应测试。
+- 成员 A、B 已提供的阶段报告、提示词、截图和测试记录。
+- 实验要求中的 make、make qemu、make grade 和 report 目录约束。
+
+[GUARANTEE]
+- 只把实际执行过的命令和真实输出写成验证结果。
+- 工具链、QEMU 或环境缺失必须记录为环境限制，不得伪造通过。
+- 不覆盖成员 A、B 的未提交修改，不提交 bin、obj、日志或本地工具数据库。
+
+[SPECIFICATION]
+- 核对 pmm_init() -> init_pmm_manager() -> page_init() -> init_memmap() -> alloc_pages()/free_pages() 的接口链。
+- 在可用环境执行 make、make qemu、make grade，并记录失败原因和输出。
+- 汇总 report/report.md、report/prompt.md、report/images/ 的交付状态。
+```
 
 ## Prompt A-1：整理 page_init 与 First-Fit 报告结构
 
