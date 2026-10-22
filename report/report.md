@@ -130,7 +130,51 @@ Buddy System 的实现和测试说明提示词见 `report/prompt.md` 的 Prompt 
 
 SLUB 的实现、测试和错误路径提示词记录见 `report/promptB.md`。
 
-### 4.6 Challenge：未知硬件的可用物理内存范围
+### 4.6 成员 C：联调、验证与交付整理
+
+**负责人：** 2411041-李培涛
+
+成员 C 没有重复实现成员 A、B 已完成的分配算法，主要负责把三人的工作放到同一份 `lab2` 代码基线上，并用实际运行结果确认它们能够共同工作。
+
+#### 代码与接口联调
+
+1. 拉取远程 `lab2` 分支的最新提交，核对成员 A 的 `page_init()`/Buddy System 与成员 B 的 Best-Fit/SLUB 是否同时存在。
+2. 梳理 `pmm_init()` → `init_pmm_manager()` → `page_init()` → `init_memmap()` → `alloc_pages()`/`free_pages()` 的调用链，确认三种页级后端都遵守 `pmm_manager` 接口。
+3. 检查 `USE_BEST_FIT_PMM`、`USE_BUDDY_PMM` 后端选择、SLUB 初始化入口和 Makefile 的编译参数，避免一个后端的改动覆盖其他后端。
+4. 检查构建生成物和临时文件的忽略规则，避免 `bin/`、`obj/`、日志等文件进入交付目录。
+
+#### 构建和运行验证
+
+成员 C 在 WSL2 中选择 QEMU 4.1.1 并加载 RISC-V 工具链后执行：
+
+```sh
+make clean
+make GCCPREFIX=riscv64-unknown-elf- DEFS=-DUSE_BEST_FIT_PMM
+make GCCPREFIX=riscv64-unknown-elf- QEMU=qemu-system-riscv64 DEFS=-DUSE_BEST_FIT_PMM qemu
+make GCCPREFIX=riscv64-unknown-elf- QEMU=qemu-system-riscv64 DEFS=-DUSE_BEST_FIT_PMM grade
+python3 tools/check_member_b.py \
+  --gccprefix riscv64-unknown-elf- \
+  --qemu qemu-system-riscv64 \
+  --timeout 30
+```
+
+验证结果为：
+
+- 内核成功编译并生成镜像；
+- QEMU 启动后输出 `best_fit_pmm_manager`，Best-Fit 检查和四组 SLUB 自检均为 `PASS`；
+- `make grade` 输出 `page init: OK`、`best fit: OK` 和 `Total Score: 20/20`；
+- 自动验证脚本覆盖 Best-Fit、First-Fit、Buddy 三种后端，以及五类非法释放路径，全部通过。
+
+#### 报告和交付整理
+
+1. 将成员 A、B 的阶段报告合并为 `report/report.md`，补齐实验目的、整体逻辑、模块接口、Challenge、测试结果和限制说明。
+2. 汇总成员 A 的 Prompt A-1/A-2/A-3、成员 B 的 `promptB.md`，并补充成员 C 的集成核验提示词。
+3. 检查 `report/images/` 中的截图文件与 Markdown 链接一一对应，保留截图来源和验证边界。
+4. 执行 `git diff --check`、`git status` 和分支/远程核对，提交并推送最终 `lab2` 分支。
+
+成员 C 的交付重点是让算法实现、测试证据、报告和 Git 分支形成可复核闭环；算法正确性结论仍以成员 A、B 的代码和三人共同复跑的测试结果为依据。
+
+### 4.7 Challenge：未知硬件的可用物理内存范围
 
 **负责人：** 2411046-梁家瑞
 
@@ -173,7 +217,7 @@ make grade
 ### 5.3 交付检查
 
 - 当前分支为 `lab2`，远程跟踪 `origin/lab2`。
-- `bin/`、`obj/`、日志和 `.codegraph/` 已加入忽略规则。
+- `bin/`、`obj/`、日志和其他本地生成物已加入忽略规则。
 - 报告引用的 lab2 图片均位于 `report/images/`。
 - A、B 的阶段报告和提示词记录保留在仓库内，供本报告交叉核对。
 - 代码和报告的最终构建、QEMU、课程评分及成员 B 全套检查均已在 WSL2 完成。
