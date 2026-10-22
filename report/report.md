@@ -162,7 +162,7 @@ make qemu
 make grade
 ```
 
-三条命令均因环境缺少 `riscv64-unknown-elf-gcc` 和 `qemu-system-riscv64` 而无法完成。`make grade` 能运行注入步骤，但编译和 QEMU 阶段失败，输出为 0/20；这不能作为代码得分或代码失败结论。Windows 原生 `make` 另外因 Makefile 使用 Unix `mkdir -p` 失败。
+重跑前尝试执行课程环境函数 `use-qemu 4.1.1`，但当前 WSL shell 未定义该函数；`qemu-system-riscv64 --version` 和 `riscv64-unknown-elf-gcc --version` 也均显示命令不存在。三条命令因此因环境缺少交叉编译器和 QEMU 而无法完成。`make grade` 能运行注入步骤，但编译和 QEMU 阶段失败，输出为 0/20；这不能作为代码得分或代码失败结论。Windows 原生 `make` 另外因 Makefile 使用 Unix `mkdir -p` 失败。
 
 因此，本报告不把成员 C 本机的构建、QEMU 或 grade 写成通过；后续需要在安装课程指定工具链和 QEMU 4.1.1 的环境中重跑。
 
