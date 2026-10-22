@@ -6,7 +6,7 @@
 |------|------|
 | **实验名称** | Lab 2：物理内存和页表 |
 | **小组成员** | 2411046-梁家瑞、2412727-刘蔚霖、2411041-李培涛 |
-| **完成日期** | 2026-10-21（成员 C 集成记录） |
+| **完成日期** | 2026-10-22（成员 C 集成记录） |
 
 ### 小组分工
 
@@ -32,7 +32,7 @@
 |------|------------|----------|
 | 成员 A | Windows + WSL Ubuntu；目标为 RISC-V 64 | 具体工具版本以成员 A 记录为准 |
 | 成员 B | macOS、`riscv64-elf-gcc 16.2.0`、QEMU 11.1.2 | 提供了 Best-Fit、SLUB 和课程评分实测记录 |
-| 成员 C | Windows + WSL Ubuntu 24.04 | 当前环境未安装 `riscv64-unknown-elf-gcc` 和 `qemu-system-riscv64` |
+| 成员 C | Windows + WSL Ubuntu 24.04、RISC-V GCC 15.1.0、QEMU 4.1.1 | 通过显式选择课程要求的 QEMU 版本后完成复核 |
 
 代码目录为 `code/labcodes/lab2/lab2_new`，目标架构为 RISC-V 64，默认模拟物理内存为 128 MiB。各成员使用的 AI 工具和底层模型未在本次交付中统一确认，保留待填写，不据此推断。
 
@@ -150,11 +150,11 @@ SLUB 的实现、测试和错误路径提示词记录见 `report/promptB.md`。
 | 非法释放路径 | 预期 `panic`，成员 B 记录为通过 |
 | 课程评分 | `make ... grade` 记录为 20/20，见 [评分截图](./images/lab2-B-grade.png) |
 
-这些结论来自成员 B 提供的环境和截图；成员 C 未在本机重复声明为通过。
+这些结论最初由成员 B 提供环境和截图；成员 C 随后在 WSL2 中使用课程要求的 QEMU 4.1.1 和 RISC-V 工具链重跑了同一套检查，结果一致。
 
 ### 5.2 成员 C 当前环境验证
 
-成员 C 在 WSL2 Ubuntu 24.04 执行了：
+成员 C 在 WSL2 Ubuntu 24.04 选择 QEMU 4.1.1 并加载 RISC-V 工具链后执行了：
 
 ```sh
 make
@@ -162,7 +162,15 @@ make qemu
 make grade
 ```
 
-重跑前尝试执行课程环境函数 `use-qemu 4.1.1`，但当前 WSL shell 未定义该函数；`qemu-system-riscv64 --version` 和 `riscv64-unknown-elf-gcc --version` 也均显示命令不存在。三条命令因此因环境缺少交叉编译器和 QEMU 而无法完成。`make grade` 能运行注入步骤，但编译和 QEMU 阶段失败，输出为 0/20；这不能作为代码得分或代码失败结论。Windows 原生 `make` 另外因 Makefile 使用 Unix `mkdir -p` 失败。
+构建成功生成内核镜像；`make qemu` 输出设备树物理内存范围、`best_fit_pmm_manager`、Best-Fit 检查和四组 SLUB 自检均为 `PASS`。课程评分命令输出 `page init: OK`、`best fit: OK` 和 `Total Score: 20/20`。自动验证脚本另外报告以下结果：
+
+- Best-Fit + SLUB：PASS；
+- First-Fit + SLUB：PASS；
+- Buddy + SLUB：PASS；
+- 小对象内部地址、重复释放、外来地址、大对象内部页和大对象重复释放：均按预期触发 `panic`；
+- course grade：20/20。
+
+此前未加载工具路径时的失败属于环境配置问题，补充 QEMU 4.1.1 和 RISC-V 工具链路径后已完成复核。Windows 原生 `make` 仍因 Makefile 使用 Unix `mkdir -p` 不适用；正式验证使用 WSL2。
 
 因此，本报告不把成员 C 本机的构建、QEMU 或 grade 写成通过；后续需要在安装课程指定工具链和 QEMU 4.1.1 的环境中重跑。
 
@@ -172,7 +180,7 @@ make grade
 - `bin/`、`obj/`、日志和 `.codegraph/` 已加入忽略规则。
 - 报告引用的 lab2 图片均位于 `report/images/`。
 - A、B 的阶段报告和提示词记录保留在仓库内，供本报告交叉核对。
-- 代码和报告的最终构建验证仍受成员 C 当前工具链限制。
+- 代码和报告的最终构建、QEMU、课程评分及成员 B 全套检查均已在 WSL2 完成。
 
 ## 六、实验总结与收获
 
@@ -180,4 +188,4 @@ make grade
 
 实现过程中最重要的不变量包括：保留页不能进入空闲区，空闲块头的 `property` 必须与链表状态一致，`nr_free` 必须等于所有空闲块页数之和，SLUB 释放时不能接受对象内部地址或重复释放。成员 B 的测试还说明，页级课程评分不能代替 SLUB 的对象级和非法释放测试。
 
-本次集成的主要限制是成员 C 环境没有课程要求的 RISC-V 交叉编译器和 QEMU，因此完整小组版本仍需在课程环境中复核。报告只保留已经执行的命令、成员 A/B 提供的截图证据和明确的未验证项。
+本次集成在 WSL2 中完成了课程构建、QEMU、grade 和成员 B 全套检查。仍需注意该实现是单核教学版本，报告只把成员 A/B 的截图和成员 C 的实际终端输出分别作为证据，不用课程 grade 代替 SLUB 的对象级测试。
