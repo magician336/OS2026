@@ -34,7 +34,7 @@
 | 成员 B | macOS、`riscv64-elf-gcc 16.2.0`、QEMU 11.1.2 | 提供了 Best-Fit、SLUB 和课程评分实测记录 |
 | 成员 C | Windows + WSL Ubuntu 24.04、RISC-V GCC 15.1.0、QEMU 4.1.1 | 通过显式选择课程要求的 QEMU 版本后完成复核 |
 
-代码目录为 `code/labcodes/lab2/lab2_new`，目标架构为 RISC-V 64，默认模拟物理内存为 128 MiB。各成员使用的 AI 工具和底层模型未在本次交付中统一确认，保留待填写，不据此推断。
+代码目录为 `code/labcodes/lab2/lab2_new`，目标架构为 RISC-V 64，默认模拟物理内存为 128 MiB。本次成员协作使用的模型为 `gpt6-luna`；AI 工具名称未在本次交付中统一记录，不据此推断其他工具信息。
 
 ## 三、实验整体逻辑分析
 
