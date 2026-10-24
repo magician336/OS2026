@@ -95,7 +95,7 @@ Best-Fit 遍历全部空闲块，选择满足请求的最小块；同尺寸候�
 
 成员 B 的附加测试覆盖最小适配、同尺寸选择、切分、连续块不足、前后合并和链表计数。成员 B 记录的完整验证截图见 [Best-Fit 与 SLUB](./images/lab2-B-best-fit-slub.png) 和 [完整检查](./images/lab2-B-full-checks.png)。
 
-成员 B 的实现提示词和迭代记录见 `report/prompt.md`；成员 C 的集成核验提示词见 `report/prompt.md` 的 Prompt C-1。
+成员 B 的实现提示词和迭代记录见 `report/prompt.md`；成员 C 的集成与截图交付提示词见 `report/prompt.md` 的 Prompt C-1 和 Prompt C-2。
 
 ### 4.4 Buddy System
 
@@ -176,7 +176,7 @@ python3 tools/check_member_b.py \
 #### 报告和交付整理
 
 1. 将成员 A、B 的阶段报告合并为 `report/report.md`，补齐实验目的、整体逻辑、模块接口、Challenge、测试结果和限制说明。
-2. 汇总成员 A、B 的实际提示词和协作迭代，并补充成员 C 的集成核验提示词，统一保存在 `prompt.md`。
+2. 汇总成员 A、B 的实际提示词和协作迭代，并补充成员 C 的集成、验证和截图交付提示词，统一保存在 `prompt.md`。
 3. 检查 `report/images/` 中的截图文件与 Markdown 链接一一对应，保留截图来源和验证边界。
 4. 执行 `git diff --check`、`git status` 和分支/远程核对，提交并推送最终 `lab2` 分支。
 

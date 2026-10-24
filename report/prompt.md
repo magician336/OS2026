@@ -708,3 +708,69 @@ Post-Condition：
 - 报告中的图片链接均指向 report/images/ 中存在的文件。
 - Git 工作区无未预期修改，且不包含构建产物和临时文件。
 ```
+
+## Prompt C-2：成员 C 的验证截图与交付证据
+
+```text
+[PROMPT]
+任务：作为 lab2 成员 C，整理自己的构建、QEMU/SLUB 自检和课程评分证据，并把三张真实截图加入最终实验报告。
+
+操作要求：
+- 在包含 lab2 Makefile 的目录中使用课程要求的 RISC-V 工具链和 QEMU 4.1.1。
+- 依次执行构建、QEMU/SLUB 自检和 make grade，保留终端中的真实命令与输出。
+- 只保留三张成员 C 截图：构建、QEMU/SLUB、课程评分；不把未提供的完整自动验证截图写入报告。
+- 将截图放入 report/images/，并在 report/report.md 的成员 C 验证部分使用相对路径引用。
+
+输出要求：
+- 构建截图：lab2-C-build.png。
+- QEMU/SLUB 截图：lab2-C-qemu-slub.png。
+- 课程评分截图：lab2-C-grade.png。
+- 报告只陈述截图中实际出现的版本、检查结果和评分，不补造未显示的输出。
+
+[RELY]
+- 代码目录：code/labcodes/lab2/lab2_new
+- 工具链前缀：riscv64-unknown-elf-
+- QEMU 路径：/opt/qemu-4.1.1/bin/qemu-system-riscv64
+- Best-Fit 选择宏：USE_BEST_FIT_PMM
+- 报告和图片目录：report/report.md、report/images/
+- 验证命令：make、make qemu、make grade
+
+[GUARANTEE]
+- 不修改实验源代码，不把截图中的命令或输出手工改写成通过。
+- 不使用成员 A、B 的截图冒充成员 C 的验证证据。
+- QEMU 因 timeout 正常终止时，只记录终止前已经出现的检查结果。
+- 工具链、QEMU 或构建失败时，保留失败信息并在报告中说明环境限制。
+- 不提交临时日志、交换文件、bin/、obj/ 或其他构建生成物。
+
+[SPECIFICATION]
+### 构建截图
+
+Pre-Condition：
+- 当前目录包含 lab2 Makefile，工具链可执行。
+
+Post-Condition：
+- 截图显示 GCC 版本、QEMU 4.1.1、源文件编译和内核镜像生成。
+
+### QEMU/SLUB 截图
+
+Pre-Condition：
+- Best-Fit 后端能够启动 QEMU。
+
+Post-Condition：
+- 截图显示 best_fit_pmm_manager、Best-Fit 检查和 SLUB 检查的实际 PASS 输出。
+
+### 课程评分截图
+
+Pre-Condition：
+- make grade 能够完成课程评分脚本。
+
+Post-Condition：
+- 截图显示 page init: OK、best fit: OK 和 Total Score: 20/20。
+
+### 交付检查
+
+Post-Condition：
+- 三张截图均存在于 report/images/。
+- report/report.md 的图片链接全部有效。
+- report/prompt.md 记录本次截图和交付整理提示词。
+```
