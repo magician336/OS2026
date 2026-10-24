@@ -165,6 +165,14 @@ python3 tools/check_member_b.py \
 - `make grade` 输出 `page init: OK`、`best fit: OK` 和 `Total Score: 20/20`；
 - 自动验证脚本覆盖 Best-Fit、First-Fit、Buddy 三种后端，以及五类非法释放路径，全部通过。
 
+成员 C 的三张复核截图如下，分别记录构建、QEMU/SLUB 自检和课程评分：
+
+![成员 C 构建与工具链版本](./images/lab2-C-build.png)
+
+![成员 C QEMU 与 SLUB 自检](./images/lab2-C-qemu-slub.png)
+
+![成员 C 课程评分](./images/lab2-C-grade.png)
+
 #### 报告和交付整理
 
 1. 将成员 A、B 的阶段报告合并为 `report/report.md`，补齐实验目的、整体逻辑、模块接口、Challenge、测试结果和限制说明。
