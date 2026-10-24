@@ -95,7 +95,7 @@ Best-Fit 遍历全部空闲块，选择满足请求的最小块；同尺寸候�
 
 成员 B 的附加测试覆盖最小适配、同尺寸选择、切分、连续块不足、前后合并和链表计数。成员 B 记录的完整验证截图见 [Best-Fit 与 SLUB](./images/lab2-B-best-fit-slub.png) 和 [完整检查](./images/lab2-B-full-checks.png)。
 
-成员 B 的实现提示词和迭代记录见 `report/promptB.md`；成员 C 的集成核验提示词见 `report/prompt.md` 的 Prompt C-1。
+成员 B 的实现提示词和迭代记录见 `report/prompt.md`；成员 C 的集成核验提示词见 `report/prompt.md` 的 Prompt C-1。
 
 ### 4.4 Buddy System
 
@@ -128,7 +128,7 @@ Buddy System 的实现和测试说明提示词见 `report/prompt.md` 的 Prompt 
 
 成员 B 的自检覆盖 30 种大小、跨 slab 分配、释放复用、对齐、大对象、算术溢出、真实耗尽和五类非法释放。课程评分截图见 [Lab2 grade](./images/lab2-B-grade.png)。
 
-SLUB 的实现、测试和错误路径提示词记录见 `report/promptB.md`。
+SLUB 的实现、测试和错误路径提示词记录见 `report/prompt.md`。
 
 ### 4.6 成员 C：联调、验证与交付整理
 
@@ -168,7 +168,7 @@ python3 tools/check_member_b.py \
 #### 报告和交付整理
 
 1. 将成员 A、B 的阶段报告合并为 `report/report.md`，补齐实验目的、整体逻辑、模块接口、Challenge、测试结果和限制说明。
-2. 汇总成员 A 的 Prompt A-1/A-2/A-3、成员 B 的 `promptB.md`，并补充成员 C 的集成核验提示词。
+2. 汇总成员 A、B 的实际提示词和协作迭代，并补充成员 C 的集成核验提示词，统一保存在 `prompt.md`。
 3. 检查 `report/images/` 中的截图文件与 Markdown 链接一一对应，保留截图来源和验证边界。
 4. 执行 `git diff --check`、`git status` 和分支/远程核对，提交并推送最终 `lab2` 分支。
 
@@ -188,7 +188,7 @@ python3 tools/check_member_b.py \
 
 | 测试 | 结果来源 |
 |------|----------|
-| Best-Fit + SLUB | 成员 B 终端截图和 `promptB.md` 记录为 PASS |
+| Best-Fit + SLUB | 成员 B 终端截图和 `prompt.md` 记录为 PASS |
 | First-Fit + SLUB | 成员 B 自动验证记录为 PASS |
 | Buddy + SLUB | 成员 B 自动验证记录为 PASS |
 | 非法释放路径 | 预期 `panic`，成员 B 记录为通过 |
@@ -219,7 +219,7 @@ make grade
 - 当前分支为 `lab2`，远程跟踪 `origin/lab2`。
 - `bin/`、`obj/`、日志和其他本地生成物已加入忽略规则。
 - 报告引用的 lab2 图片均位于 `report/images/`。
-- A、B 的阶段报告内容已合并到本报告，提示词记录仍保留在 `prompt.md` 和 `promptB.md` 中。
+- A、B 的阶段报告内容已合并到本报告，A、B、C 的提示词记录集中在 `prompt.md` 中。
 - 代码和报告的最终构建、QEMU、课程评分及成员 B 全套检查均已在 WSL2 完成。
 
 ## 六、实验总结与收获
