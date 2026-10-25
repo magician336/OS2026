@@ -7,3 +7,4 @@ proj*-handin.tar.gz
 *.log
 *~HEAD
 *.swp
+.env
