@@ -127,7 +127,7 @@ def main():
 
     cases = [
         ("best-fit", "-DUSE_BEST_FIT_PMM", "best_fit_pmm_manager"),
-        ("first-fit", "", "default_pmm_manager"),
+        ("first-fit", "-DUSE_FIRST_FIT_PMM", "default_pmm_manager"),
         ("buddy", "-DUSE_BUDDY_PMM", "buddy_pmm_manager"),
     ]
     for label, defines, manager in cases:

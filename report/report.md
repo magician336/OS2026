@@ -88,12 +88,23 @@ First-Fit 的说明和改进分析与 `report/prompt.md` 的 Prompt A-1 一起�
 **涉及文件和函数：**
 
 - `kern/mm/best_fit_pmm.c`：初始化、空闲区登记、最小可用块选择、切分、释放、合并和附加检查；
-- `kern/mm/pmm.c`：根据 `USE_BEST_FIT_PMM` 选择 `best_fit_pmm_manager`；
+- `kern/mm/pmm.c`：默认选择 `best_fit_pmm_manager`，可用 `USE_FIRST_FIT_PMM`、`USE_BUDDY_PMM` 显式切换参考实现和扩展后端；
 - `kern/mm/default_pmm.c`：修复尾部插入后缺少 `break` 的问题。
 
 Best-Fit 遍历全部空闲块，选择满足请求的最小块；同尺寸候选保持地址较低者。分配时保留剩余块，释放时按地址插入并合并前后相邻块，`nr_free` 只按实际页数变化。
 
 成员 B 的附加测试覆盖最小适配、同尺寸选择、切分、连续块不足、前后合并和链表计数。成员 B 记录的完整验证截图见 [Best-Fit 与 SLUB](./images/lab2-B-best-fit-slub.png) 和 [完整检查](./images/lab2-B-full-checks.png)。
+
+**Best-Fit 算法的进一步改进空间（练习问题回答）：**
+
+当前实现已保证 Best-Fit 的语义正确：总是选中满足请求的最小块，同尺寸候选取地址较低者，释放时按地址插入并合并前后相邻块，`nr_free` 始终等于空闲块页数之和。在此之上仍有以下改进空间：
+
+1. 查找复杂度：`best_fit_alloc_pages()` 每次分配都线性遍历整个空闲链表，最坏为 O(n)。可以把空闲块按大小分桶（segregated free list）或用平衡树、跳表组织，把"找最小可用块"降到 O(log n) 甚至 O(1)，代价是合并和切分时需要同步维护辅助结构。
+2. 碎片策略：Best-Fit 倾向于把块切成"刚好够用加很小的剩余"，长期运行会积累大量难以复用的小块。可以设置最小剩余阈值，当剩余块低于实用下限时改选更大的块（向 First-Fit 折中），或者对小块做延迟合并、定期整理。
+3. 分配局部性：目前每次分配都从链表头扫描，可以缓存上次分配位置做滚动指针，同尺寸块优先选与上次分配相邻的地址，改善局部性。
+4. 边界简化：`insert_free_block()` 手工处理空链表和尾部插入两种边界，改用带哨兵节点的循环链表写法可以去掉特判，减少出错面。
+
+这些改进属于性能和鲁棒性范畴。实验手册对 Best-Fit 的时空复杂度不做要求，当前实现已通过框架的 `best_fit_check()`、成员 B 的附加检查和课程评分。
 
 成员 B 的实现提示词和迭代记录见 `report/prompt.md`；成员 C 的集成与截图交付提示词见 `report/prompt.md` 的 Prompt C-1 和 Prompt C-2。
 
@@ -111,7 +122,7 @@ Buddy System 使用不同阶次的空闲链表。初始化时把不一定按最�
 
 成员 A 的 `buddy_check()` 覆盖 1、3、8 页请求、分裂、耗尽失败、不同释放顺序、两级伙伴合并、释放后重新分配和空闲页计数恢复。实测截图见 [Buddy 检查](./images/lab2-A-buddy-check.png)。
 
-Buddy System 的实现和测试说明提示词见 `report/prompt.md` 的 Prompt A-2 和 Prompt A-3。
+Buddy System 的两份提示词（模块生成与测试设计）见 `report/prompt.md` 的 Prompt A-4 和 Prompt A-5，并在临时副本上实际执行验证，生成的模块和测试可正常编译运行；Prompt A-2 和 A-3 只用于整理报告说明结构，不生成代码。
 
 ### 4.5 SLUB 任意大小对象分配
 
@@ -140,7 +151,7 @@ SLUB 的实现、测试和错误路径提示词记录见 `report/prompt.md`。
 
 1. 拉取远程 `lab2` 分支的最新提交，核对成员 A 的 `page_init()`/Buddy System 与成员 B 的 Best-Fit/SLUB 是否同时存在。
 2. 梳理 `pmm_init()` → `init_pmm_manager()` → `page_init()` → `init_memmap()` → `alloc_pages()`/`free_pages()` 的调用链，确认三种页级后端都遵守 `pmm_manager` 接口。
-3. 检查 `USE_BEST_FIT_PMM`、`USE_BUDDY_PMM` 后端选择、SLUB 初始化入口和 Makefile 的编译参数，避免一个后端的改动覆盖其他后端。
+3. 检查 `pmm.c` 的后端选择（默认 Best-Fit，`USE_FIRST_FIT_PMM`、`USE_BUDDY_PMM` 显式切换）、SLUB 初始化入口和 Makefile 的编译参数，避免一个后端的改动覆盖其他后端。
 4. 检查构建生成物和临时文件的忽略规则，避免 `bin/`、`obj/`、日志等文件进入交付目录。
 
 #### 构建和运行验证
@@ -214,7 +225,7 @@ make qemu
 make grade
 ```
 
-构建成功生成内核镜像；`make qemu` 输出设备树物理内存范围、`best_fit_pmm_manager`、Best-Fit 检查和四组 SLUB 自检均为 `PASS`。课程评分命令输出 `page init: OK`、`best fit: OK` 和 `Total Score: 20/20`。自动验证脚本另外报告以下结果：
+构建成功生成内核镜像；`make qemu` 输出设备树物理内存范围、`best_fit_pmm_manager`、Best-Fit 检查和四组 SLUB 自检均为 `PASS`。课程评分命令输出 `page init: OK`、`best fit: OK` 和 `Total Score: 20/20`。上述命令无需附加编译宏：`pmm.c` 已将 Best-Fit 设为默认页级分配器，`USE_FIRST_FIT_PMM`、`USE_BUDDY_PMM` 只用于显式切换后端做对照测试。在此之前普通 `make grade` 实际运行 First-Fit、评分为 10/20，该问题已在集成阶段修正并复测。自动验证脚本另外报告以下结果：
 
 - Best-Fit + SLUB：PASS；
 - First-Fit + SLUB：PASS；

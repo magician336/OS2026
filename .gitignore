@@ -5,3 +5,5 @@
 .qemu.out
 proj*-handin.tar.gz
 *.log
+*~HEAD
+*.swp

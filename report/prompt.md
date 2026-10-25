@@ -1,6 +1,6 @@
 # Lab2 Prompt 记录
 
-本文件集中记录成员 A、B、C 在 lab2 中实际使用的提示词和协作迭代。成员 B 的原始多轮协作记录已合并到本文件；Prompt A-1/A-2/A-3 原文中的 `report/lab2-A.md` 是阶段报告路径，阶段报告内容现已合并到 `report/report.md`，原始提示词路径保留用于记录实际迭代。代码生成、测试和报告整理的事实边界以实际提交和运行记录为准。
+本文件集中记录成员 A、B、C 在 lab2 中实际使用的提示词和协作迭代。成员 B 的原始多轮协作记录已合并到本文件；Prompt A-1/A-2/A-3 原文中的 `report/lab2-A.md` 是阶段报告路径，阶段报告内容现已合并到 `report/report.md`，原始提示词路径保留用于记录实际迭代。Prompt A-4/A-5 是按实验手册任务三要求补齐设计的 Buddy System 两份提示词（模块生成与测试设计），已在仓库外临时副本上实际执行验证，生成的模块和测试可正常编译运行；交付代码保留成员 A 的原始实现。代码生成、测试和报告整理的事实边界以实际提交和运行记录为准。
 
 ## Prompt A-1：整理 page_init 与 First-Fit 报告结构
 
@@ -144,6 +144,95 @@
 - 只修改、润色测试报告结构。
 - 不修改代码，不写截图命令，不编造测试输出。
 ```
+
+## Prompt A-4：生成 Buddy System 分配模块并接入内核（手册任务三第一份）
+
+```text
+[PROMPT]
+**任务**：在没有现成 Buddy System 代码框架和测试函数的情况下，参考 ucore 物理内存管理框架（kern/mm/pmm.h 的 struct pmm_manager、kern/mm/default_pmm.c 的参考实现、libs/list.h 的双向链表），从零生成 Buddy System 页级分配模块，写入 kern/mm/buddy_pmm.c 和 kern/mm/buddy_pmm.h，并接入内核。
+**操作要求**：
+- 直接创建和修改项目文件，不要只展示代码。
+- 模块对外只暴露 buddy_pmm_manager；内部状态和辅助函数一律 static。
+- 接入方式：kern/mm/pmm.c 的 init_pmm_manager() 已提供 USE_BUDDY_PMM 条件编译路径；若所用代码树没有该路径，则添加一个 `#ifdef USE_BUDDY_PMM` 分支选择 buddy_pmm_manager。构建验证使用 `make DEFS=-DUSE_BUDDY_PMM`。
+- 不得修改 pmm.h、default_pmm.c、best_fit_pmm.c 和任何已有测试函数。
+**输出要求**：编译无错误无警告；QEMU 启动后输出 `memory management: buddy_pmm_manager`，内核自检通过。
+
+[RELY]
+- struct pmm_manager 共 7 个成员：name、init、init_memmap、alloc_pages、free_pages、nr_free_pages、check，签名见 kern/mm/pmm.h。
+- 页描述符 struct Page 的字段 flags、property、ref、page_link；宏 PageReserved、PageProperty、SetPageProperty、ClearPageProperty；辅助函数 set_page_ref()。
+- le2page(le, page_link) 从链表节点还原页描述符；libs/list.h 提供 list_init、list_add、list_del、list_empty、list_next。
+- init_memmap(base, n) 收到的空闲区间不一定按最大块对齐；区间内页都已由 page_init() 标记 PageReserved。
+- alloc_pages(n) 必须返回至少 n 个连续页；资源不足返回 NULL；违反前置条件用 assert 终止。
+- 默认 QEMU 配置 128 MiB 内存（32768 页），阶次 0..15 足够。
+
+[GUARANTEE]
+必须实现并提供以下接口（签名与 struct pmm_manager 成员一致）：
+- static void buddy_init(void);
+- static void buddy_init_memmap(struct Page *base, size_t n);
+- static struct Page *buddy_alloc_pages(size_t n);
+- static void buddy_free_pages(struct Page *base, size_t n);
+- static size_t buddy_nr_free_pages(void);
+- static void buddy_check(void);
+- const struct pmm_manager buddy_pmm_manager = { ... };
+允许 static 辅助函数（阶次计算、块插入/移出）与模块私有状态（阶次空闲链表数组、空闲页计数、区间基址和页数）。不得改变公开接口或修改其他模块。
+
+[SPECIFICATION]
+## buddy_init / buddy_init_memmap
+**Pre-Condition**：base..base+n-1 全部为 PageReserved；调用发生在 page_init() 之后、任何分配之前。
+**Post-Condition**：初始区间被分解为若干 2^k 页的块并登记到对应阶次空闲链表；buddy_nr_free_pages() 等于 n；空闲块首记录阶次并置 PageProperty。
+
+## buddy_alloc_pages
+**Pre-Condition**：n > 0。
+**Case 1（常规请求）**：请求向上取整到目标阶次；从该阶次或更高阶链表取块，高阶块逐级对半分裂并登记低阶半块，返回块首页描述符；空闲页计数减少 2^目标阶次。
+**Case 2（资源不足）**：空闲页总数不足或找不到足够大的块时返回 NULL，且不改变任何内部状态。
+**Case 3（超上界）**：目标阶次超出实现的最高阶次时返回 NULL。
+
+## buddy_free_pages
+**Pre-Condition**：base 是此前一次成功分配的块首；n 不超过该块的阶次大小。
+**Post-Condition**：整块回到空闲集合；用块首相对页号异或 2^k 定位伙伴，伙伴空闲且同阶则移出并逐级合并，直到无法合并或越界；空闲页计数按被释放块的阶次大小增加，合并不改变计数。
+**Case（非法释放）**：base 越界、阶次非法或区间越界时 assert 失败终止。
+
+## buddy_check
+**Post-Condition**：至少占位并通过；最终版本由 Prompt A-5 设计。
+```
+
+执行记录：该 prompt 已在仓库外临时副本上实际执行。生成的 buddy_pmm.c/h 以 `make DEFS=-DUSE_BUDDY_PMM` 构建无警告，QEMU 启动输出 `memory management: buddy_pmm_manager`，占位自检通过，且 init.c 的 SLUB 四组自检在该 buddy 后端上全部 PASS（SLUB 的 kmalloc/kfree 走 buddy 的 alloc_pages/free_pages，覆盖了真实分配释放路径）。交付目录保留成员 A 的原始实现，不替换。
+
+## Prompt A-5：为生成的 Buddy 分配器设计测试（手册任务三第二份）
+
+```text
+[PROMPT]
+**任务**：针对 Prompt A-4 生成的 Buddy System 分配模块（kern/mm/buddy_pmm.c），设计一组测试函数写入 buddy_check()（及其调用的 static 测试辅助），检验不同大小内存块的分配、释放、分裂和合并是否正确。不得修改分配逻辑本身。
+**操作要求**：
+- 直接修改 kern/mm/buddy_pmm.c 中的 buddy_check()；每个断言失败都会触发 assert 终止。
+- 用独立的 struct Page 样本数组模拟页描述符区间：先把每页置 PageReserved，再交给 buddy_init()/buddy_init_memmap()；测试结束后必须恢复真实页区间的描述符状态并重新初始化，避免污染后续运行。
+- 每组覆盖点通过后用 cprintf 输出分组结果。
+**输出要求**：`make DEFS=-DUSE_BUDDY_PMM` 构建后 QEMU 运行，所有分组输出 PASS，内核不 panic，最后输出 buddy_check() succeeded。
+
+[RELY]
+- 与 Prompt A-4 相同的框架事实（struct pmm_manager、struct Page、libs/list.h、阶次空闲链表）。
+- kern/debug/assert.h 的 assert 失败即 panic；输出用 cprintf。
+- 测试区间固定用 16 页样本，可手工推导每个请求的分裂与合并结果并写成精确断言（地址、阶次、计数）。
+
+[GUARANTEE]
+必须提供：
+- static void buddy_check(void)；（扩展自 A-4 生成的版本）
+允许 static 测试辅助（如遍历全部阶次链表校验计数不变量）；不得改变 buddy_alloc_pages、buddy_free_pages 等分配逻辑和公开接口。
+
+[SPECIFICATION]
+## 测试覆盖（每个行为都要有明确断言）
+1. 阶次取整与分裂：请求 3 页实际消耗 4 页块；连续请求 3、1、8 页的返回地址与空闲计数符合 16 页区间的分裂顺序。
+2. 耗尽：空闲页不足或无足够大块时返回 NULL，内部状态不变。
+3. 释放顺序：以混合顺序释放全部已分配块，每步计数正确。
+4. 两级合并：相邻同阶伙伴释放后合并成高一阶块；继续释放更大块能跨两级合并，最终回到单一最大块（块首阶次可断言）。
+5. 复用：全部释放后空闲计数恢复初值，再次请求整个区间能拿到同一地址。
+6. 计数不变量：每个关键步骤后，遍历所有阶次空闲链表，块数乘 2^k 之和必须等于空闲页计数。
+
+## 测试为什么有效
+以上断言把 Buddy System 的核心不变量——块大小为 2 的幂、伙伴地址满足异或关系、只有同阶空闲伙伴才能合并、空闲页计数守恒——映射为可观察的返回地址、块首阶次和计数检查；任何一条被实现破坏，都会在对应 assert 处 panic，并能从分组输出直接定位违反的行为。
+```
+
+执行记录：该 prompt 已在同一临时副本上实际执行。按覆盖点重写 buddy_check() 后重新构建，QEMU 输出 `[Buddy Gen Test] rounding/split: PASS`、`exhaustion: PASS`、`merge/reuse/invariant: PASS` 和 `buddy_check() succeeded!`，内核不 panic。两份 prompt 的执行均为仓库外验证，交付代码与测试保持成员 A 的原始版本。
 
 ## Prompt B：Best-Fit 与 SLUB 协作记录
 
