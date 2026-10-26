@@ -6,14 +6,14 @@
 |------|------|
 | **实验名称** | Lab 2：物理内存和页表 |
 | **小组成员** | 2411046-梁家瑞、2412727-刘蔚霖、2411041-李培涛 |
-| **完成日期** | 2026-10-22（成员 C 集成记录） |
+| **完成日期** | 2026-10-22（成员 C 集成记录）；2026-10-26（成员 B 补充 QEMU 页表调试） |
 
 ### 小组分工
 
 | 成员 | 负责的练习/模块 |
 |------|----------------|
 | 2411046-梁家瑞（成员 A） | `page_init()`、First-Fit 分析、Buddy System 及测试 |
-| 2412727-刘蔚霖（成员 B） | Best-Fit、SLUB 及测试 |
+| 2412727-刘蔚霖（成员 B） | Best-Fit、SLUB 及测试；双 GDB 调试 QEMU 页表查询、地址翻译和 TLB 填充 |
 | 2411041-李培涛（成员 C） | 接口集成、构建验证、报告和交付检查 |
 
 ## 一、实验目的
@@ -25,13 +25,14 @@
 3. 在统一的 `pmm_manager` 接口下实现并接入 Best-Fit 和 Buddy System。
 4. 在页级分配器之上实现 SLUB 任意大小对象分配。
 5. 记录真实提示词、测试命令、验证证据和环境限制。
+6. 通过双 GDB 观察 QEMU 模拟 MMU 的过程，把一次内核访存与页表查询、物理地址计算及 TLB 缓存联系起来。
 
 ## 二、实验环境
 
 | 成员 | 环境与工具 | 验证边界 |
 |------|------------|----------|
 | 成员 A | Windows + WSL Ubuntu；目标为 RISC-V 64 | 具体工具版本以成员 A 记录为准 |
-| 成员 B | macOS、`riscv64-elf-gcc 16.2.0`、QEMU 11.1.2 | 提供了 Best-Fit、SLUB 和课程评分实测记录 |
+| 成员 B | macOS、`riscv64-elf-gcc 16.2.0`、QEMU 11.1.2；页表调试另用 Docker Ubuntu 24.04/aarch64、GCC 13.3.0、GDB 15.1、带符号的 QEMU 4.1.1 | 提供 Best-Fit、SLUB、课程评分及双 GDB 页表调试实测记录 |
 | 成员 C | Windows + WSL Ubuntu 24.04、RISC-V GCC 15.1.0、QEMU 4.1.1 | 通过显式选择课程要求的 QEMU 版本后完成复核 |
 
 代码目录为 `code/labcodes/lab2/lab2_new`，目标架构为 RISC-V 64，默认模拟物理内存为 128 MiB。本次成员协作使用的模型为 `gpt6-luna`；AI 工具名称未在本次交付中统一记录，不据此推断其他工具信息。
@@ -199,6 +200,124 @@ python3 tools/check_member_b.py \
 
 操作系统通常通过固件或引导程序提供的硬件描述获得内存布局。RISC-V 可解析设备树 `memory` 节点，其他平台可使用 BIOS E820、UEFI memory map 或 ACPI。内核获得范围后还要扣除固件、内核镜像、设备保留区、内存映射 I/O 和自身元数据。若平台完全没有描述接口，破坏性探测不应作为通用操作系统的首选方案。
 
+### 4.8 分支任务：双 GDB 调试 QEMU 页表查询过程
+
+**负责人：** 2412727-刘蔚霖。**实测日期：** 2026-10-26。
+
+#### 目的与两个调试器的关系
+
+本任务观察 CPU 执行访存指令时，虚拟地址如何变成物理地址。真实机器由 MMU 完成这些步骤；本实验在 QEMU 中运行内核，能通过 QEMU 的 C 源码观察模拟实现。
+
+- **内层 `gdb-multiarch`**：通过 QEMU 的 gdbstub（端口 1234）调试 RISC-V 内核，停在一条真实的栈写指令前，并单步执行它。
+- **外层原生 `gdb`**：调试运行在 Linux/aarch64 上的 QEMU 进程，在 MMU 查表和软件 TLB 填充函数中记录状态。
+
+外层暂停 QEMU 时，内层 GDB 的单步命令会等待；只有外层继续运行 QEMU，内层指令才能执行完。这就是“调试正在调试 ucore 的 QEMU”。只在内核中打印 SATP 或手工算地址，不能替代这一层源码观察。
+
+本次使用 QEMU **4.1.1** 源码，开启调试信息并以 `-O0` 构建。没有修改 QEMU 的地址翻译算法，也没有修改内核分配器。内核基线为 `e7490ca`，使用 Best-Fit 配置编译。构建配方、双 GDB 脚本和复现说明保存在 [tools/pagewalk](../code/labcodes/lab2/lab2_new/tools/pagewalk/README.md)。
+
+#### 选取的访存指令
+
+先断到 `kern_init`，再通过反汇编找到其第一条 `sd ra,8(sp)`。实际记录如下：
+
+```text
+=> 0xffffffffc02000ec <kern_init+22>: sd ra,8(sp)
+pc   = 0xffffffffc02000ec
+sp   = 0xffffffffc0205ff0
+ra   = 0x80000a02
+satp = 0x8000000000080206
+```
+
+这条指令把 RA 的 8 字节内容写到 `sp + 8`，因此目标**数据虚拟地址**为 `0xffffffffc0205ff8`。注意它与指令自身所在的 PC 是两个地址。
+
+在外层 GDB 中实际捕获到以下调用链（由上层调用者向内排列）：
+
+```text
+TCG 生成的代码
+  -> helper_le_stq_mmu
+  -> store_helper
+  -> tlb_fill
+  -> riscv_cpu_tlb_fill
+  -> get_physical_address
+```
+
+`access_type = 1`（store）、`mmu_idx = 1`（本次为 S-mode）。因此该记录来自 CPU 的真实写操作；调试器自身读内存触发的翻译被过滤，没有混入 store 查表计数。
+
+#### SATP、页表索引和物理地址
+
+外层 GDB 在 `target/riscv/cpu_helper.c:256` 停到 PTE 已读出的状态，并记录以下值；翻译返回结果由 GDB 的函数返回断点获取：
+
+| 观测项 | 实测结果及含义 |
+|---|---|
+| SATP | `0x8000000000080206`，MODE=8，即 Sv39；ASID=0 |
+| 根页表物理地址 | SATP 的 PPN `0x80206` 左移 12 位，得到 `0x80206000` |
+| 根页表虚拟地址 | `boot_page_table_sv39 = 0xffffffffc0206000` |
+| VA 分解 | VPN[2]=511、VPN[1]=1、VPN[0]=5、页内偏移=`0xff8` |
+| 本次访问的层级 | QEMU 循环变量 `i=0`、`ptshift=18`，即首先查询的 Sv39 顶层 |
+| 本层索引 | `idx=511` |
+| PTE 物理地址 | `0x80206000 + 511 × 8 = 0x80206ff8` |
+| PTE 值 | `0x200000cf`，PPN=`0x80000` |
+| PTE 标志 | V、R、W、X、A、D 为 1；U、G 为 0 |
+| 翻译函数返回 | `result=0`（成功），`*physical=0x80205000`，`*prot=7`（读、写、执行） |
+| 最终数据物理地址 | `0x80205000 + 0xff8 = 0x80205ff8` |
+
+**为什么没有查完三级？** Sv39 允许在不同层级放叶子项。当前 `entry.S` 的根表第 511 项已经有 R/W/X 权限，是一个覆盖 **1 GiB** 的叶子项，故第一层查询就结束。只有遇到有效且 R/W/X 都为 0 的非叶子项，才继续到下一级。不能把“采用 Sv39”解释成每次一定读三张页表。
+
+本次 1 GiB 大页的完整地址计算为：
+
+```text
+物理大页基址 = PTE.PPN << 12 = 0x80000000
+大页内偏移   = VA & ((1 << 30) - 1) = 0x205ff8
+物理地址     = 0x80000000 + 0x205ff8 = 0x80205ff8
+```
+
+QEMU 的 `get_physical_address` 在该路径返回的是 4 KiB 对齐的物理页地址 `0x80205000`；最终字节地址还包含低 12 位偏移。把这个返回值直接当成此次 store 的完整物理地址，会少算 `0xff8`。
+
+#### TLB 填充与第二次访问
+
+外层 GDB 在 `tlb_set_page` 和 `accel/tcg/cputlb.c:836`（TLB 项复制完成之后）记录到：
+
+```text
+vaddr = 0xffffffffc0205000
+paddr = 0x80205000
+prot = 7, mmu_idx = 1, size = 4096
+TLB index = 5
+addr_read = addr_write = addr_code = 0xffffffffc0205000
+```
+
+这里页表中的映射覆盖 1 GiB，而本版 QEMU 此调用向软件 TLB 填入的是当前访问对应的 4 KiB 页。软件 TLB 还保存宿主内存地址换算所需的 `addend`，它会受宿主进程地址布局影响，不应误当成 RISC-V 的物理页号。
+
+内层 GDB 执行一次 `si` 后，把 PC 放回同一条 `sd` 再执行一次。它是为了对照而**人为重放的同值栈写操作**，不是内核自然重复执行。两次 PC 均从 `0xffffffffc02000ec` 前进到 `0xffffffffc02000ee`，虚拟地址中的值均为 RA。外层共捕获到 **一次目标 store 查表、一次 PTE 读取和一次 TLB 填充**。结合已填入的有效写标签与两次完成的 store，说明第二次访问复用了缓存，没有再次走页表查询路径。
+
+随后通过 QEMU 的 `Qqemu.PhyMemMode:1` 调试扩展直接读取物理地址，得到真实终端记录：
+
+```text
+STORE 1: VA=0xffffffffc0205ff8 value=0x80000a02
+STORE 2: VA=0xffffffffc0205ff8 value=0x80000a02
+sending: Qqemu.PhyMemMode:1
+received: "OK"
+PHYSICAL: PA=0x80205ff8 value=0x80000a02
+sending: Qqemu.PhyMemMode:0
+received: "OK"
+```
+
+这使页表公式、QEMU 翻译结果和实际物理内存中的写入值相互对应。恢复虚拟地址调试模式并脱离内层 GDB 后，内核继续启动，Best-Fit 附加检查和全部 SLUB 自检通过。
+
+#### 复现与验证边界
+
+在已准备好 Linux 调试环境、带符号 QEMU 和编译后的内核时执行：
+
+```sh
+python3 tools/pagewalk/run.py \
+  --qemu /opt/qemu-build/riscv64-softmmu/qemu-system-riscv64 \
+  --source /opt/qemu-src --kernel-dir "$PWD" --out /tmp/pagewalk-new-run
+```
+
+完整 Docker 构建和运行步骤见上述 README。脚本记录两层 GDB 的真实输出与结构化观测值，核对地址计算、权限、TLB 标签、写入值、两次访存的查表次数以及最终内核自检；本次输出 `result: PASS`、`stores: 2`、`walks: 1`、`levels_visited: 1`、`kernel_self_checks: PASS`。原始日志保留在仓库外，报告摘录实际结果，不将生成日志或伪造截图作为提交物。
+
+结论范围是**当前内核的顶层大页映射、一次写访问及其受控重放**。没有把它扩展成已验证三级非叶子遍历、所有权限异常或真实 CPU 硬件 TLB 行为；这里观察的是 QEMU 4.1.1 的软件模拟实现。
+
+源码依据：[RISC-V 地址翻译及 TLB fill](https://github.com/qemu/qemu/blob/v4.1.1/target/riscv/cpu_helper.c)、[TCG 软件 TLB](https://github.com/qemu/qemu/blob/v4.1.1/accel/tcg/cputlb.c)。
+
 ## 五、集成、测试与验证
 
 ### 5.1 成员 B 提供的已完成验证
@@ -212,6 +331,7 @@ python3 tools/check_member_b.py \
 | Buddy + SLUB | 成员 B 自动验证记录为 PASS |
 | 非法释放路径 | 预期 `panic`，成员 B 记录为通过 |
 | 课程评分 | `make ... grade` 记录为 20/20，见 [评分截图](./images/lab2-B-grade.png) |
+| QEMU 页表查询分支任务 | 2026-10-26 双 GDB 实测：地址翻译、TLB 填充、重复访问及物理内存写入核对通过，详见 4.8 节 |
 
 这些结论最初由成员 B 提供环境和截图；成员 C 随后在 WSL2 中使用课程要求的 QEMU 4.1.1 和 RISC-V 工具链重跑了同一套检查，结果一致。
 
@@ -246,5 +366,7 @@ make grade
 本实验把物理内存从设备树描述转换为可管理的 `Page` 资源，再用统一接口替换不同分配策略。First-Fit 展示了连续空闲块链表的基本语义；Best-Fit 改变了选块策略；Buddy System 通过二的幂次分裂和合并改善了伙伴定位；SLUB 则在页级分配之上提供对象级复用。
 
 实现过程中最重要的不变量包括：保留页不能进入空闲区，空闲块头的 `property` 必须与链表状态一致，`nr_free` 必须等于所有空闲块页数之和，SLUB 释放时不能接受对象内部地址或重复释放。成员 B 的测试还说明，页级课程评分不能代替 SLUB 的对象级和非法释放测试。
+
+成员 B 补充的双 GDB 调试把“分配内存”和“访问内存”两个问题连起来：分配器负责给出可使用的页面或对象；MMU 根据页表翻译访问地址，TLB 缓存翻译结果。实际观察还纠正了“Sv39 每次一定查三级”的误解：当前启动页表使用顶层 1 GiB 叶子映射，本次只读取一个 PTE。
 
 本次集成在 WSL2 中完成了课程构建、QEMU、grade 和成员 B 全套检查。仍需注意该实现是单核教学版本，报告只把成员 A/B 的截图和成员 C 的实际终端输出分别作为证据，不用课程 grade 代替 SLUB 的对象级测试。
