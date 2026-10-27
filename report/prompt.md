@@ -4,7 +4,28 @@
 
 ## Prompt A：Trap 上下文恢复与入口
 
-[待成员 A 填写：最终提示词、迭代过程、GDB 验证中遇到的问题]
+~~~text
+[PROMPT]
+请阅读实验报告模板、lab3-task-split.md、lab3 实验要求和成员 A 已完成的代码说明，帮助我按照模板整理一份成员 A 的实验报告。报告应重点解释 TrapFrame 布局、SAVE_ALL 与 RESTORE_ALL 的对应关系、__alltraps 如何按 RISC-V 调用约定传递参数，以及测试计划和知识点。
+
+[RELY]
+- 只依据实验模板、lab3 任务分工和工程中的实际文件组织报告。
+- 成员 A 负责 kern/trap/trapentry.S 的 RESTORE_ALL 和 __alltraps。
+- 成员 B 负责 trap.c 的中断与异常处理，成员 C 负责集成。
+- 图片位置使用 Markdown 图片占位符。
+
+[GUARANTEE]
+- 不生成或修改任何实验代码。
+- 不虚构 make、QEMU、GDB 或 grade 的运行结果。
+- 不把截图命令写进报告正文。
+- 对尚未完成的成员 B/C 内容明确标记为待联调。
+- 报告以文本解释为主，保留实验要求中的整体逻辑、核心函数、Spec、AI 协作边界、知识点和未覆盖知识点。
+
+[SPECIFICATION]
+输入：实验模板、lab3 分工、lab3 框架文件和成员 A 的代码范围。
+输出：report/lab3-A.md，按模板组织章节，包含实验信息、整体执行流、TrapFrame 字段、汇编函数解释、Spec、实现风险、图片占位、OS 原理对应关系和总结。
+约束：图片只留引用位置，截图命令另行提供；没有真实证据的测试只写预期和验证边界。
+~~~
 
 ## Prompt B：中断与异常处理
 
