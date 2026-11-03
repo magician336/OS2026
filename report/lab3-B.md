@@ -31,6 +31,14 @@ B: four exception returns
 
 依次执行 0x0000、0x0000007b、0x9002、0x00100073。前三个 PC 差分别为 2、4、2；最后一个 32 位断点后成功执行标志打印，四条指令各触发一次。之后十次统计，QEMU 自行退出。[复现脚本](../code/labcodes/lab3/lab3_new/tools/check_member_b.py)
 
+![运行 python3 tools/check_member_b.py，编译并链接内核，生成镜像后启动 OpenSBI。](./images/lab3-B-build.png)
+
+图 1　运行 python3 tools/check_member_b.py，编译并链接内核，生成镜像后启动 OpenSBI。
+
+![两条非法指令和两条断点指令各触发一次，随后内核打印 four exception returns。时钟累计输出十行 100 ticks，复验脚本确认 QEMU 正常退出。](./images/lab3-B-exceptions-timer.png)
+
+图 2　两条非法指令和两条断点指令各触发一次，随后内核打印 four exception returns。时钟累计输出十行 100 ticks，复验脚本确认 QEMU 正常退出。
+
 ## 联调记录与交接
 
 基线能链接，原因是 trap_stub.c 提供弱定义。原始 make qemu 的 OpenSBI 下一跳为零。显式加载内核后下一跳为 0x80200000，但启动页表只有高地址映射，启用 satp 后仍须在低地址取指。临时副本在根页表第 2 项加入物理 0x80000000 起始的恒等映射，并为 QEMU 增加 `-kernel bin/ucore.img`。课程 make grade 在同样适配的临时副本运行，使用本机超时命令替代工具，评分逻辑和匹配条件沿用原脚本。上下文恢复 35/35，非法指令与兜底 25/25，持续时钟 40/40。这是适配环境的成绩；C 仍需确认默认启动方式与关机次数。未发现需要返工的 B 处理函数错误，实际排查发生在启动阶段。A 的寄存器 GDB 记录和 C 的整组报告分别由各自负责人完成。
