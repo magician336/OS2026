@@ -53,20 +53,6 @@
 4. 复验与总结：列出复现命令、关键输出、真实联调问题、spec/prompt 的设计依据，以及涉及和未覆盖的 OS 原理。
 ~~~
 
-### 成员 B 开发提示词
-
-以下按四段整理本次开发请求及核对源码后采用的 spec，非逐字对话。
-
-~~~text
-[PROMPT] 在既有 lab3 分支完成 B 的两个处理函数，使用 A 的返回路径联调，并提供可重放的时钟与异常测试。
-
-[RELY] trap_dispatch 已按 scause 最高位区分同步与异步事件。A 从 TrapFrame 恢复 sepc。clock_init 将 ticks 清零并安排首个事件。实验运行在 RV64GC 内核态，故障指令地址可读。
-
-[GUARANTEE] 保留函数签名、TrapFrame、分发器与 A 的汇编。每次时钟中断只增加一次 ticks，异步返回保留原 PC。非法指令和断点返回到下一条指令。未知原因打印完整现场。
-
-[SPECIFICATION] 先重设时钟，再计数。每 TICK_NUM 次调用 print_ticks，达到 SHUTDOWN_AFTER 次统计时调用 sbi_shutdown。根据首半字低两位判断本实验的 2/4 字节指令。用评分脚本核对消息前缀，在隔离副本里连续执行两种宽度的非法指令和断点，用下一条指令的地址、后续标志和关机退出验证返回路径。
-~~~
-
 ## Prompt C：框架导入、lab2 迁移与集成
 
 ### Prompt C-1：导入 lab3 框架并迁移 lab2
