@@ -6,6 +6,7 @@
 #include <memlayout.h>
 #include <mmu.h>
 #include <riscv.h>
+#include <sbi.h>
 #include <stdio.h>
 #include <trap.h>
 
@@ -80,8 +81,61 @@ void print_regs(struct pushregs *gpr) {
     cprintf("  t6       0x%08x\n", gpr->t6);
 }
 
-//lab3 function2 YOUR CODE
+// lab3 function2 2412727
+#ifndef SHUTDOWN_AFTER
+#define SHUTDOWN_AFTER 10
+#endif
 
+void interrupt_handler(struct trapframe *tf) {
+    uintptr_t cause = tf->cause & ~((uintptr_t)1 << 63);
+    if (cause == IRQ_S_TIMER) {
+        clock_set_next_event();
+        ticks++;
+        if (ticks % TICK_NUM == 0) {
+            print_ticks();
+            if (ticks / TICK_NUM >= SHUTDOWN_AFTER) {
+                sbi_shutdown();
+            }
+        }
+        return;
+    }
+
+    static const char *const names[] = {
+        [IRQ_U_SOFT] = "User software", [IRQ_S_SOFT] = "Supervisor software",
+        [IRQ_H_SOFT] = "Hypervisor software", [IRQ_M_SOFT] = "Machine software",
+        [IRQ_U_TIMER] = "User timer", [IRQ_H_TIMER] = "Hypervisor timer",
+        [IRQ_M_TIMER] = "Machine timer", [IRQ_U_EXT] = "User external",
+        [IRQ_S_EXT] = "Supervisor external", [IRQ_H_EXT] = "Hypervisor external",
+        [IRQ_M_EXT] = "Machine external", [IRQ_COP] = "Coprocessor",
+        [IRQ_HOST] = "Host",
+    };
+    if (cause < sizeof(names) / sizeof(names[0])) {
+        cprintf("%s interrupt\n", names[cause]);
+    } else {
+        cprintf("Unknown interrupt: cause %lu\n", cause);
+        print_trapframe(tf);
+    }
+}
+
+void exception_handler(struct trapframe *tf) {
+    const char *type;
+    switch (tf->cause) {
+    case CAUSE_ILLEGAL_INSTRUCTION:
+        type = "Illegal instruction";
+        break;
+    case CAUSE_BREAKPOINT:
+        type = "Breakpoint";
+        break;
+    default:
+        print_trapframe(tf);
+        return;
+    }
+
+    cprintf("%s at 0x%016lx\n", type, tf->epc);
+    // RV64GC: the first halfword distinguishes compressed and 32-bit opcodes.
+    uint16_t first = *(const uint16_t *)tf->epc;
+    tf->epc += (first & 3) == 3 ? 4 : 2;
+}
 
 static inline void trap_dispatch(struct trapframe *tf) {
     if ((intptr_t)tf->cause < 0) {
