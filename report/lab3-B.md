@@ -2,7 +2,7 @@
 
 ## 实现与接口
 
-基于框架迁移 a70e615 和 A 的 2081fae。硬件把原因和返回 PC 写入 scause、sepc，A 的入口保存现场，trap_dispatch 按原因最高位选择处理函数。B 更新栈上的 TrapFrame 后，A 的恢复代码把 epc 写回 sepc，sret 继续执行。[模块源码](../code/labcodes/lab3/lab3_new/kern/trap/trap.c) · [四段式 spec/prompt](prompt.md#prompt-b--2412727-刘蔚霖)
+基于框架迁移 a70e615 和 A 的 2081fae。硬件把原因和返回 PC 写入 scause、sepc，A 的入口保存现场，trap_dispatch 按原因最高位选择处理函数。B 更新栈上的 TrapFrame 后，A 的恢复代码把 epc 写回 sepc，sret 继续执行。[模块源码](../code/labcodes/lab3/lab3_new/kern/trap/trap.c) · [四段式 spec/prompt](prompt.md#成员-b-开发提示词)
 
 - **时钟**。IRQ_S_TIMER 先设置下一次事件，再递增 ticks。每 100 次沿用 print_ticks 的格式。练习规定按累计输出次数关机，源码只有 TICK_NUM，未定义 SHUTDOWN_AFTER，本次默认取 10，可通过编译宏覆盖。第 1000 次中断输出后调用 sbi_shutdown。其他已知中断按类型提示，未知中断打印原因与完整现场。
 - **同步异常**。非法指令与断点分别输出评分脚本匹配的消息和原 PC。只读取故障地址的首个半字，低两位为 11 时跳过 4 字节，否则跳过 2 字节。异步时钟不能跳过被打断的指令。其余异常只打印现场。
