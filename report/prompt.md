@@ -53,6 +53,20 @@
 4. 复验与总结：列出复现命令、关键输出、真实联调问题、spec/prompt 的设计依据，以及涉及和未覆盖的 OS 原理。
 ~~~
 
+### 成员 B 开发提示词
+
+以下按四段整理本次开发请求及核对源码后采用的 spec，非逐字对话。
+
+~~~text
+[PROMPT] 在既有 lab3 分支完成 B 的两个处理函数，使用 A 的返回路径联调，并提供可重放的时钟与异常测试。
+
+[RELY] trap_dispatch 已按 scause 最高位区分同步与异步事件。A 从 TrapFrame 恢复 sepc。clock_init 将 ticks 清零并安排首个事件。实验运行在 RV64GC 内核态，故障指令地址可读。
+
+[GUARANTEE] 保留函数签名、TrapFrame、分发器与 A 的汇编。每次时钟中断只增加一次 ticks，异步返回保留原 PC。非法指令和断点返回到下一条指令。未知原因打印完整现场。
+
+[SPECIFICATION] 先重设时钟，再计数。每 TICK_NUM 次调用 print_ticks，达到 SHUTDOWN_AFTER 次统计时调用 sbi_shutdown。根据首半字低两位判断本实验的 2/4 字节指令。用评分脚本核对消息前缀，在隔离副本里连续执行两种宽度的非法指令和断点，用下一条指令的地址、后续标志和关机退出验证返回路径。
+~~~
+
 ## Prompt C：框架导入、lab2 迁移与集成
 
 ### Prompt C-1：导入 lab3 框架并迁移 lab2
@@ -159,4 +173,59 @@ lab2 参考实现：
 - 只做 M0 需要的迁移和脚手架，不提前实现 Lab3 Trap 功能。
 - 所有路径使用 OS2026 内相对路径；不写入主机绝对路径、凭据或内部笔记。
 - 构建命令、关键输出和未验证边界必须写入报告。
+
+### Prompt C-2：A/B 合入后的运行时联调验证
+
+这是成员 C 在 A/B 实现合入后实际执行的联调提示词整理版。目标是把两个功能模块的静态实现落实为可观察的运行时证据，并对遗留决策给出有输出支撑的结论。
+
+```text
+[PROMPT]
+**任务**：在成员 A/B 的实现合入后，对 lab3 仓库默认形态做运行时联调验证，不修改任何实验功能代码。完成三件事：① 用 make debug 启动暂停的 QEMU，用 riscv64-unknown-elf-gdb 在 __alltraps、trap()、__trapret 设断点，验证 Trap 入口参数传递、TrapFrame 布局和恢复返回闭环；② 以仓库默认启动参数运行 make qemu 和 make grade，记录实际输出；③ 对成员 B 交接的两个遗留事项给出结论——默认启动方式是否存在其报告的"OpenSBI 下一跳为零"问题，以及 SHUTDOWN_AFTER 默认取 10 与课程评分是否兼容。
+
+**操作要求**：命令在 code/labcodes/lab3/lab3_new 中执行；GDB 验证用批量脚本记录完整会话；make grade 结束后重建普通内核再确认工作区状态；发现代码问题只报告并定位到负责人模块，不擅自修改功能实现。
+
+**输出要求**：列出实际执行的命令、关键输出和逐项结论；GDB 每个断点处的寄存器与内存值如实记录；不虚构任何测试结果。
+
+[RELY]
+- 分工与实现状态：A 的 RESTORE_ALL/__alltraps 已合入（kern/trap/trapentry.S，标记 lab3 function1 2411046）；B 的 interrupt_handler/exception_handler 已合入（kern/trap/trap.c，标记 lab3 function2 2412727，SHUTDOWN_AFTER 未定义时默认 10，可编译宏覆盖）。
+- 真实接口与状态：__alltraps、__trapret、trap(struct trapframe *)；struct trapframe 为 36 项布局（32 个 GPR + sstatus/sepc/stval/scause，REGBYTES=8）；idt_init() 将 stvec 指向 __alltraps；时钟中断的 scause 为中断位（最高位 1）加 IRQ_S_TIMER；clock_set_next_event()、ticks、TICK_NUM=100、sbi_shutdown()。
+- Makefile 实际目标：qemu 为 -machine virt -nographic -bios default -device loader,file=bin/ucore.img,addr=0x80200000；debug 附加 -s -S；gdb 以 riscv64-unknown-elf-gdb 连接 localhost:1234；工具链前缀 riscv64-unknown-elf-，模拟器为课程要求的 QEMU 4.1.1（成员 C 本机分别位于 /opt/riscv/bin 与 /opt/qemu-4.1.1/bin）。
+- 待确认事实：成员 B 报告其本机 QEMU 11.1.2 下原始 make qemu 的 OpenSBI 下一跳为零，需临时页表恒等映射和 -kernel 参数才能启动；课程要求环境为 QEMU 4.1.1。
+- make grade 依赖注入机制（输出 lab3 injection complete），依次运行上下文恢复与断点 EPC、非法指令 EPC 前进与返回、持续时钟与重复 Trap 返回三项测试，输出各项分数与 Total Score。
+
+[GUARANTEE]
+不修改 kern/ 下任何实验功能代码；只允许临时 GDB 批量脚本，会话结束后不留在仓库。
+必须完成的检查项：
+- GDB：__alltraps 处 scause 为时钟中断值（最高位 1 + IRQ_S_TIMER）；trap() 入口 a0 == sp 且指向 trapframe；trapframe 内保存的原始 sp、sepc、scause 与 CSR 寄存器一致；单步跨过 RESTORE_ALL 后 sp 恢复为保存值、sepc/sstatus 写回对应 CSR；执行 sret 后 pc 等于保存的 tf->epc。
+- make qemu：默认参数下输出十次 100 ticks 后经 sbi_shutdown 正常退出（QEMU 退出码 0）。
+- make grade：三项测试全部 PASS（35/35 + 25/25 + 40/40），Total Score 100/100。
+- 结论：默认启动方式与 SHUTDOWN_AFTER=10 的兼容性各给出一条有命令输出支撑的明确结论。
+禁止：把未执行的检查写成通过；修改 Makefile 或启动参数来绕过启动问题；把注入测试后的构建产物留作最终交付状态。
+
+[SPECIFICATION]
+## C-M2：运行时联调验证与遗留事项确认
+
+**Pre-Condition**：
+- A/B 实现已合入，make clean && make GCCPREFIX=riscv64-unknown-elf- 可从干净状态完成构建。
+- 本机可提供 riscv64-unknown-elf 前缀工具链与 QEMU 4.1.1。
+
+**Post-Condition**：
+- GDB 会话逐项确认模块一闭环：参数传递、TrapFrame 布局、恢复顺序与 sret 返回地址，全部有会话记录。
+- make qemu 在仓库默认形态完整跑通；make grade 三项 100/100。
+- 成员 B 交接的两个事项得到结论：课程要求的 QEMU 4.1.1 下默认启动无需任何适配（其问题为 QEMU 11 行为差异）；SHUTDOWN_AFTER=10 与默认 make qemu 和 make grade 均兼容。
+- 工作区无注入残留，最终交付状态为普通内核构建。
+
+**Case 1：GDB 断点未命中 __alltraps**
+- 触发：QEMU -S 暂停状态下设断点后 continue 不命中。
+- 处理：核对 stvec 写入与内核加载地址 0x80200000，记录实际现象；属环境问题时记录环境限制，不修改内核代码。
+
+**Case 2：默认 make qemu 启动失败或输出异常**
+- 触发：默认参数下 OpenSBI 不跳转或内核提前退出。
+- 处理：保留完整输出，区分 QEMU 版本差异与内核问题；课程要求版本下仍失败的记录为未解决，不写成通过。
+
+**Case 3：make grade 分数与预期不符**
+- 触发：某项 FAIL 或总分低于 100。
+- 处理：保留评分输出与失败消息，定位到 A/B 对应处理函数并交由负责人修复；联调方不直接改动功能代码。
+```
+
 ```
