@@ -1,6 +1,6 @@
 # 成员 B：刘蔚霖（2412727）实现与验证
 
-日期：2026-11-13。依据课程[练习](http://oslab.mobisys.top/lab2026/_book/lab4/lab4_2_1_exercises.html)及实际头文件、entry.S、trapentry.S；起点为 lab4 的 2f1b83b。工具实测：macOS，GCC 16.2.0、GDB 18.1、QEMU 11.1.2。使用 Codex，底层精确模型版本未核实，不填写猜测值。prompt.md 和最终提示词保持待填。
+日期：2026-11-13。依据课程[练习](http://oslab.mobisys.top/lab2026/_book/lab4/lab4_2_1_exercises.html)及实际头文件、entry.S、trapentry.S；起点为 lab4 的 2f1b83b。工具实测：macOS，GCC 16.2.0、GDB 18.1、QEMU 11.1.2。使用 Codex，底层精确模型版本未核实，不填写猜测值。首次交付时 prompt.md 按要求留空；现已补充[成员 B 提示词与实际协作说明](prompt.md#member-b-prompt)。新增提示词用于后续手写练习，与本次由 Codex 实现核心代码的实际过程分别记录。
 
 ## 验收清单与接口
 

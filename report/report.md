@@ -97,13 +97,13 @@ static int copy_mm(uint32_t clone_flags, struct proc_struct *proc);(kern/process
 
 **功能说明:** 把系统从"已经能运行内核代码"推进到"已经能创建并登记多个内核线程"。`alloc_proc` 返回干净 PCB;`proc_init` 把当前执行现场包装成 `idleproc` 并创建第一个内核线程 `initproc`;`kernel_thread` 把函数入口和参数整理成线程首次运行所需的临时上下文;`do_fork` 组合内核栈、PID、链表与状态位等资源并处理失败清理;`copy_thread` 把 trapframe 和 context 安放到新线程内核栈上;`copy_mm` 在本实验承担地址空间处理的占位形态。完成后系统至少存在 `idleproc` 与 `initproc` 两个关键线程。
 
-#### 最终提示词
+#### 提示词与实际协作记录
 
-【待完成】
+见 [Prompt B](prompt.md#member-b-prompt)。该提示词在实现提交后补充，用于后续手写练习；本次实际由 Codex 实现核心代码，协作过程已在同节说明。
 
 #### 实现迭代过程
 
-成员 B 已实现六个函数，详细验收、调用链、失败回收和复现命令见 [成员 B 实现与验证](member-b.md)。最终提示词按本次要求暂留空。
+成员 B 已实现六个函数，详细验收、调用链、失败回收和复现命令见 [成员 B 实现与验证](report-memberB.md)。提示词及实际协作说明已补充。
 
 `alloc_proc` 清零 PCB（进程控制块），设置未初始化态、无效 PID、共享内核页表物理地址，并初始化两个链表节点。`proc_init` 将启动现场包装成 PID 0 的 idleproc，再通过 kernel_thread 创建 PID 1 的 initproc。`kernel_thread` 依照 entry.S 将函数和参数放入 s0/s1，设置 SPP/SPIE 并清除 SIE。`copy_thread` 将 trapframe（陷阱帧）复制到独立内核栈顶，设置子线程 a0=0 和 forkret 入口。`copy_mm` 明确断言父线程没有用户地址空间。`do_fork` 在资源准备完成后关中断分配 PID、登记哈希/链表、计数并唤醒；分配失败只回收已取得的资源。
 
@@ -196,4 +196,4 @@ void switch_to(struct context *from, struct context *to);(kern/process/switch.S)
 
 ### 成员 B 验证补充（2026-11-13）
 
-[详细验证记录](member-b.md)。重新核查发现 `make grade` 已调用 `tools/inject.py`，会在临时副本挂接三个测试；上面的“没有任何调用点”仅适用于普通构建，不能据此重复添加永久挂接。B 增强了创建测试断言。完整 QEMU/grade 仍待 A/C 模块完成。
+[详细验证记录](report-memberB.md)。重新核查发现 `make grade` 已调用 `tools/inject.py`，会在临时副本挂接三个测试；上面的“没有任何调用点”仅适用于普通构建，不能据此重复添加永久挂接。B 增强了创建测试断言。完整 QEMU/grade 仍待 A/C 模块完成。
