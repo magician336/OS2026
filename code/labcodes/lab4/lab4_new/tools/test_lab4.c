@@ -1,4 +1,5 @@
 #include <defs.h>
+#include <riscv.h>
 #include <assert.h>
 #include <pmm.h>
 #include <proc.h>
@@ -59,13 +60,24 @@ void test_lab4_process_create(void)
     assert(initproc->parent == idleproc && initproc->mm == NULL);
     assert(initproc->context.ra != 0 && initproc->context.sp != 0);
 
+    assert(find_proc(initproc->pid) == initproc);
+    assert(initproc->pgdir == boot_pgdir_pa && idleproc->pgdir == boot_pgdir_pa);
+    assert(initproc->tf != NULL && ((uintptr_t)initproc->tf & 15) == 0);
+    assert((uintptr_t)initproc->tf == initproc->kstack + KSTACKSIZE - sizeof(*initproc->tf));
+    assert(initproc->context.sp == (uintptr_t)initproc->tf);
+    assert(initproc->tf->gpr.a0 == 0);
+    assert(initproc->tf->gpr.sp == (uintptr_t)initproc->tf);
+    assert((initproc->tf->status & (SSTATUS_SPP | SSTATUS_SPIE | SSTATUS_SIE)) ==
+           (SSTATUS_SPP | SSTATUS_SPIE));
+    assert(!list_empty(&proc_list));
+
     lab4_pass("Process Create");
 }
 
 static volatile int test_thread1_ran;
 static volatile int test_thread2_ran;
 
-static void test_lab4_thread(void *arg)
+static int test_lab4_thread(void *arg)
 {
     int id = (int)(intptr_t)arg;
     int i;
@@ -81,6 +93,7 @@ static void test_lab4_thread(void *arg)
         current->need_resched = 1;
         schedule();
     }
+    return 0; // Unreachable; retain the kernel_thread callback return type.
 }
 
 void test_lab4_schedule(void)
