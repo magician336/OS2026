@@ -4,15 +4,15 @@
 
 ## 验收清单与接口
 
-|项目|实现与证据|范围|
-|---|---|---|
-|alloc_proc|整块清零，pid=-1，PROC_UNINIT，pgdir=boot_pgdir_pa，链表节点自环；注入 kmalloc 失败返回 NULL|宿主实测|
-|proc_init|初始化全局链表和哈希桶；idle PID 0，启动栈、need_resched=1、current、计数 1；创建并查找 init PID 1，设置名称，失败 panic|正常路径宿主实测，panic 路径代码检查|
-|kernel_thread|s0 函数、s1 参数；SPP/SPIE=1、SIE=0；epc=kernel_thread_entry|字段实测与汇编核对|
-|copy_thread|288 字节陷阱帧位于 8192 字节栈顶；16 字节对齐；a0=0；默认 sp 指向陷阱帧；显式 stack 被保留|宿主实测|
-|do_fork|数量上限、PCB/栈分配、父子关系、发布顺序、PID 与计数|成功及两种分配失败实测|
-|copy_mm|断言 current->mm==NULL，子 mm=NULL；不复制用户空间|正常路径实测；约束代码检查|
-|首次执行|context.ra=forkret、context.sp=tf；后续由 C 的切换恢复|字段验证通过，真实 CPU 执行待集成|
+| 项目 | 实现与证据 | 范围 |
+| --- | --- | --- |
+| alloc_proc | 整块清零，pid=-1，PROC_UNINIT，pgdir=boot_pgdir_pa，链表节点自环；注入 kmalloc 失败返回 NULL | 宿主实测 |
+| proc_init | 初始化全局链表和哈希桶；idle PID 0，启动栈、need_resched=1、current、计数 1；创建并查找 init PID 1，设置名称，失败 panic | 正常路径宿主实测，panic 路径代码检查 |
+| kernel_thread | s0 函数、s1 参数；SPP/SPIE=1、SIE=0；epc=kernel_thread_entry | 字段实测与汇编核对 |
+| copy_thread | 288 字节陷阱帧位于 8192 字节栈顶；16 字节对齐；a0=0；默认 sp 指向陷阱帧；显式 stack 被保留 | 宿主实测 |
+| do_fork | 数量上限、PCB/栈分配、父子关系、发布顺序、PID 与计数 | 成功及两种分配失败实测 |
+| copy_mm | 断言 current->mm==NULL，子 mm=NULL；不复制用户空间 | 正常路径实测；约束代码检查 |
+| 首次执行 | context.ra=forkret、context.sp=tf；后续由 C 的切换恢复 | 字段验证通过，真实 CPU 执行待集成 |
 
 idle 不进入普通进程链表或 PID 哈希，find_proc 只接受正 PID。它计入 nr_process；调度器无普通可运行线程时以 idle 保底。所有线程共享内核页表，pgdir 保存物理地址而非 satp 编码。C 切换必须使用 Sv39 编码，不可调用 Sv32 遗留 lsatp。
 

@@ -20,7 +20,7 @@
 
 ### Lab4 成员 B：进程创建及初始化模块开发 Prompt
 
-[PROMPT]
+**[PROMPT]**
 
 #### 一、任务目标
 
@@ -194,7 +194,7 @@
 
 ---
 
-[RELY]
+**[RELY]**
 
 #### 一、进程管理核心数据结构
 
@@ -305,7 +305,7 @@
 
 ---
 
-[GUARANTEE]
+**[GUARANTEE]**
 
 #### 一、必须由用户手写的接口
 
@@ -364,7 +364,7 @@
 
 ---
 
-[SPECIFICATION]
+**[SPECIFICATION]**
 
 #### 一、alloc_proc()
 
