@@ -335,4 +335,36 @@ proc_init(void)
 
 
 
-//LAB4 function3 YOUR CODE
+//LAB4 function3 2411041
+
+// proc_run - 把 CPU 交给目标线程:更新 current、切换页表基址并迁移寄存器现场。
+// 整个切换过程置于关中断临界区,否则时钟中断可能在 current、satp 与实际执行现场
+// 不一致的中间态打断切换;旧线程被换回时从同一临界区的 local_intr_restore 处继续,
+// 因此每个线程恢复的是自己换出前的中断状态。
+void
+proc_run(struct proc_struct *proc) {
+    if (proc != current) {
+        bool intr_flag;
+        struct proc_struct *prev = current;
+        local_intr_save(intr_flag);
+        {
+            current = proc;
+            lsatp(proc->pgdir);
+            switch_to(&(prev->context), &(proc->context));
+        }
+        local_intr_restore(intr_flag);
+    }
+}
+
+// cpu_idle - idleproc 的执行主体,kern_init 执行到最后直接落到这里。
+// 检测到重调度请求时发起 schedule;调度往返后清除标志,回到空转等待。
+void
+cpu_idle(void) {
+    current = idleproc;
+    while (1) {
+        if (current->need_resched) {
+            schedule();
+            current->need_resched = 0;
+        }
+    }
+}

@@ -9,6 +9,7 @@
 #include <sbi.h>
 #include <stdio.h>
 #include <trap.h>
+#include <proc.h>
 #include <vmm.h>
 
 #define TICK_NUM 100
@@ -98,6 +99,8 @@ void interrupt_handler(struct trapframe *tf)
     {
         clock_set_next_event();
         ticks++;
+        // lab4 集成 2411041:时钟驱动重调度,为 cpu_idle 提供调度触发源
+        current->need_resched = 1;
         if (ticks % TICK_NUM == 0)
         {
             print_ticks();

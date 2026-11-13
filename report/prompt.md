@@ -718,4 +718,130 @@ idleproc：
 
 ## Prompt C:进程调度(cpu_idle / proc_run / schedule / switch_to)
 
-【待成员 C 追加】
+~~~text
+[PROMPT]
+**任务**:修改 `kern/process/proc.c`、`kern/schedule/sched.c`、`kern/process/switch.S` 三个文件中标注
+`LAB4 function3` 的位置,实现内核线程调度能力,使系统在 proc_init 完成后具备:idle 线程让出 CPU、
+从就绪队列轮转选择下一个可运行线程、跨线程保存与恢复寄存器执行现场、切换页表基址的完整调度链路,
+让 initproc 能够从 idleproc 手中接管 CPU 运行。
+
+**操作要求**:直接修改项目中的实际文件,而不是只展示代码。保留三个文件中的全部现有代码
+(如 sched.c 的 wakeup_proc、switch.S 的 kernel_thread_entry、proc.c 的 LAB4 function2 标记区),
+只填充各自的 function3 标记区;保留标记注释并把其中的"YOUR CODE"替换为学号 2411041。
+不修改 sched.h、proc.h、trap.c、trapentry.S 等其他文件。
+
+**输出要求**:以工程真实代码和下面的上下文、接口清单、行为规格为准;完成修改后报告
+改动了哪些文件,并用 make 验证编译通过。
+
+[RELY]
+// 上下文结构:ra, sp, s0..s11 共 14 个字段,按此顺序排列(kern/process/proc.h)
+struct context { uintptr_t ra, sp, s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11; };
+
+// REGBYTES = 8(libs/riscv.h),RISC-V 寄存器 8 字节;switch.S 可 #include <riscv.h> 使用该宏
+
+// 进程状态与控制块字段(kern/process/proc.h)
+enum proc_state { PROC_UNINIT, PROC_SLEEPING, PROC_RUNNABLE, PROC_ZOMBIE };
+struct proc_struct {
+    enum proc_state state; int pid; int runs; uintptr_t kstack;
+    volatile bool need_resched; struct proc_struct *parent; struct mm_struct *mm;
+    struct context context; struct trapframe *tf; uintptr_t pgdir; uint32_t flags;
+    char name[PROC_NAME_LEN + 1]; list_entry_t list_link; list_entry_t hash_link;
+};
+extern struct proc_struct *idleproc, *initproc, *current;   // proc.c 全局
+extern list_entry_t proc_list;                              // 就绪链表
+// 约定:idleproc 直接复用内核当前执行现场,不入 proc_list;其余线程由 do_fork 挂入链表
+
+// 可调用函数(全部已在工程中给出)
+void switch_to(struct context *from, struct context *to);   // proc.c 82 行已声明,由本任务在 switch.S 实现
+void wakeup_proc(struct proc_struct *proc);                 // sched.c 已给出,置 PROC_RUNNABLE
+static inline void lsatp(unsigned int pgdir);               // libs/riscv.h,写 satp 切换页表基址
+// kern/sync/sync.h:
+//   local_intr_save(x):若 sstatus.SIE 置位则关中断并把原值存入局部变量 x,否则 x=0
+//   local_intr_restore(x):x 为真时开中断
+
+// 首次运行链路(功能模块二负责,本任务依赖其成立):
+// copy_thread 把新线程 context.ra 置为 forkret、context.sp 置为其内核栈顶;
+// forkret → forkrets(current->tf) → __trapret 完成首次 trapframe 装载。
+
+// 启动链:kern_init → pmm_init → idt_init → vmm_init → proc_init(模块二)→ clock_init
+// → intr_enable → cpu_idle(本任务)。
+
+[GUARANTEE]
+必须实现的接口:
+```c
+void cpu_idle(void);                                    // kern/process/proc.c,proc.h 声明为 noreturn
+void proc_run(struct proc_struct *proc);                // kern/process/proc.c
+void schedule(void);                                    // kern/schedule/sched.c
+void switch_to(struct context *from, struct context *to); // kern/process/switch.S(RISC-V 汇编)
+```
+
+允许添加:
+- 仅限上述三个文件内、本任务标记区内的 static 辅助或注释;
+- 不得改动函数签名、不得新增全局导出符号、不得触碰 LAB4 function2 标记区。
+
+[SPECIFICATION]
+## switch_to
+**Pre-Condition**:
+- from 指向即将被换出线程的 context,current 调用点位于 proc_run 临界区内;
+- to->context 已保存过现场,或已按首次运行约定组织好(ra=恢复入口,sp=内核栈顶)。
+
+**Post-Condition**:
+- *from 保存 ra、sp、s0..s11 共 14 个寄存器值,与 struct context 字段顺序一致;
+- CPU 装载 *to 的同 14 个值,从 to->context.ra 处继续执行;
+- 调用方可见的 callee-saved 寄存器状态与换出时一致(被换回时)。
+
+**Requirements**:
+- 只保存/恢复 ra、sp、s0..s11;a0/a1 作为 from/to 指针的工作寄存器无需保存;
+- RISC-V ABI:callee-saved 寄存器跨调用不变,这是被换回线程的 C 栈帧继续正确执行的前提。
+
+## schedule
+**Pre-Condition**:
+- proc_list 已初始化,链表元素为非 idle 线程;current 非 NULL。
+
+**Post-Condition**:
+- 选中线程满足 state == PROC_RUNNABLE;其 runs 自增 1;
+- 选中的不是 current 时发生线程切换(current 更新为选中线程);
+- 链表中无可运行线程时退回 idleproc。
+
+**Case 1**:
+- current 为 idleproc:从 proc_list 头开始找第一个 PROC_RUNNABLE 线程。
+
+**Case 2**:
+- current 为普通线程:从 current->list_link 之后轮转扫描,绕过链表尾时回到 idleproc。
+
+**Requirements**:
+- "扫描链表 + runs 自增 + 发起切换"的决策区在 local_intr_save/local_intr_restore 临界区内完成,
+  防止时钟中断在 current 与选中线程不一致的中间状态打断调度。
+
+## proc_run
+**Pre-Condition**:
+- proc 处于 PROC_RUNNABLE;proc 可能等于 current。
+
+**Post-Condition**:
+- current == proc;页表基址寄存器 satp 已切换为 proc->pgdir;
+- 执行现场迁移:旧线程停在 proc_run 内 switch_to 调用点,新线程从其 context.ra 继续。
+
+**Case 1**:
+- proc == current:函数整体为空操作,不发生切换。
+
+**Case 2**:
+- proc != current:在关中断临界区内依次更新 current、lsatp(proc->pgdir)、switch_to(prev, proc);
+  旧线程被换回时,从同一临界区内 local_intr_restore 处继续,恢复其原有中断状态。
+
+## cpu_idle
+**Pre-Condition**:
+- proc_init 已完成,idleproc/current 可用,中断已开启;cpu_idle 是 kern_init 的最后一步。
+
+**Post-Condition**:
+- 永不返回(noreturn);current == idleproc。
+
+**Case 1**:
+- current->need_resched 为真:调用 schedule 发起重调度,调度返回后清除该标志继续空转。
+
+**Case 2**:
+- need_resched 为假:保持空转等待,不占用决策逻辑。
+~~~
+
+**事实来源**:以上接口、字段与宏均从 `OS2026/code/labcodes/lab4/lab4_new` 当前代码核对(proc.h/riscv.h/sync.h/pmm.h/list.h);
+"idleproc 不入 proc_list"来自实验手册功能模块二说明(proc_init 直接复用当前执行现场)与 `tools/test_lab4.c`
+对 idleproc->kstack == bootstack 的断言。调度点唯一位于 cpu_idle 的链路来自实验手册功能模块三说明。

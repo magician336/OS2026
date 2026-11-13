@@ -129,11 +129,52 @@ void switch_to(struct context *from, struct context *to);(kern/process/switch.S)
 
 #### 最终提示词
 
-【待完成】
+完整四段式提示词见 `prompt.md` 的"Prompt C"章节,四个区块(`[PROMPT]`/`[RELY]`/`[GUARANTEE]`/`[SPECIFICATION]`)齐全,其中接口与字段事实均从工程当前代码核对。
 
 #### 实现迭代过程
 
-【待完成】
+本模块实现于 2026-11-13,经一次迭代收敛,最终修改四个文件:
+
+1. `kern/process/switch.S`:实现 `switch_to`。按 `struct context` 字段顺序(ra, sp, s0..s11)保存与恢复共 14 个 64 位寄存器,偏移为序号 × `REGBYTES`(8)。只切换 callee-saved 集合是被换回线程 C 栈帧继续正确执行的 ABI 前提;`a0`/`a1` 作为 from/to 指针属调用方约定,无需保存。
+2. `kern/schedule/sched.c`:实现 `schedule`。轮转选择:current 为 idleproc 时从链表头扫描,否则从 `current->list_link` 之后继续;idleproc 不入链表,扫描绕过链表尾时自然退回 idleproc。扫描与 `runs` 自增在 `local_intr_save`/`local_intr_restore` 临界区内完成;选中的不是 current 时调用 `proc_run` 发起切换。
+3. `kern/process/proc.c`:实现 `proc_run` 与 `cpu_idle`。`proc_run` 在关中断临界区内依次更新 current、`lsatp(proc->pgdir)` 切页表、`switch_to` 迁移现场;旧线程被换回时从同一临界区的 `local_intr_restore` 处继续,恢复的是自己换出前的中断状态。`cpu_idle` 检测 `need_resched` 后调用 schedule,调度往返后清除标志回到空转,避免无可运行线程时陷入忙循环。
+4. `kern/trap/trap.c`(集成改动 2411041):时钟中断处理分支增加一行 `current->need_resched = 1`,为 cpu_idle 提供调度触发源。没有这一行,系统启动后除了测试代码手工置标志外没有任何机制触发重调度,内核只会空转。
+
+**第一次迭代**
+
+**遇到的问题:**
+- 初版在 `trap.c` 计时器分支直接引用 `current`,编译报错 `undeclared identifier 'current'`:trap.c 此前不包含 proc.h。
+
+**问题解决策略:**
+- 在 trap.c 头部补充 `#include <proc.h>`。proc.h 与 trap.h 互不构成循环包含(均有 include guard),重新编译通过。
+
+**最终结果:**
+- ✅ 25 个编译单元全部编译通过,无编译警告
+- ✅ 模块三四个符号全部进入链接(cpu_idle 不再出现在未定义符号列表)
+
+**验证方式与结果(本地联调,2026-11-13):**
+
+由于模块一/二尚未合入,验证使用一份不提交的本地桩文件:以行为正确的 `page_insert`/`page_remove` 顶替模块一(给定 `check_pgdir`/`check_boot_pgdir` 必须真实通过系统才能启动),以最小 `proc_init` 顶替模块二(创建复用 bootstack 的 idleproc 和一个手工布好 context 的桩线程 kstub)。桩线程走直接 context.ra 入口,不经过 trapframe 首次运行链路,故其运行期间中断保持关闭,这是桩的简化而非内核缺陷。
+
+QEMU 4.1.1 实测输出:
+
+```text
+memory management: best_fit_pmm_manager
+check_alloc_page() succeeded!
+check_pgdir() succeeded!
+check_boot_pgdir() succeeded!
+[stub] proc_init done: idle pid 0, kstub pid 1
+++ setup timer interrupts
+[stub] kstub round 1, pid 1, runs 1
+[stub] kstub round 2, pid 1, runs 2
+[stub] kstub round 3, pid 1, runs 3
+[stub] kstub enters silent yield loop
+100 ticks ...(共 10 次后 sbi_shutdown 正常关机)
+```
+
+该输出验证了:调度选择(头部扫描与退回 idleproc)、`proc_run` 临界区切换、`switch_to` 现场保存恢复(kstub 三轮循环计数与局部变量跨切换保持正确)、时钟驱动重调度、正常关机。每轮之间经由"切换回 idle → 时钟中断置 need_resched → 再次调度"的完整往返。
+
+桩文件验证后已删除;删除后重建,链接回到仅缺 `page_insert`/`page_remove`(模块一)与 `proc_init`(模块二)的预期状态。
 
 ---
 
@@ -141,7 +182,35 @@ void switch_to(struct context *from, struct context *to);(kern/process/switch.S)
 
 **负责人:** 2411041-李培涛
 
-【待完成:说明该宏对如何借助 `sstatus.SIE` 位与局部变量 `intr_flag` 实现开关中断,以及为什么不能用无条件 `intr_enable()`/`intr_disable()` 替代。】
+这对宏展开自 `kern/sync/sync.h`:
+
+```c
+static inline bool __intr_save(void) {
+    if (read_csr(sstatus) & SSTATUS_SIE) {
+        intr_disable();
+        return 1;
+    }
+    return 0;
+}
+static inline void __intr_restore(bool flag) {
+    if (flag) {
+        intr_enable();
+    }
+}
+#define local_intr_save(x)    do { x = __intr_save(); } while (0)
+#define local_intr_restore(x) __intr_restore(x);
+```
+
+**实现机制。** RISC-V 中监督态中断的总开关是 `sstatus` 寄存器的 SIE 位。`local_intr_save(intr_flag)` 先读 `sstatus` 检查 SIE:若中断当前是开启的,就调用 `intr_disable()`(对 `sstatus` 执行 `clear_csr(sstatus, SSTATUS_SIE)`)关掉中断,并把局部变量 `intr_flag` 记为 1;若中断本来就是关闭的,则什么都不做,`intr_flag` 记为 0。临界区结束时,`local_intr_restore(intr_flag)` 只在 `intr_flag` 为 1 时调用 `intr_enable()`(`set_csr(sstatus, SSTATUS_SIE)`)重新开中断。
+
+**关键设计是"记录原状态、按原状态恢复",而不是无条件开/关。** 原因有二:
+
+1. **支持临界区嵌套。** 如果恢复时无条件开中断,内层临界区结束时就会把外层临界区刻意关掉的中断提前打开,外层剩余代码的保护失效。按标志恢复时,内层 `save` 看到中断已关、标志记 0,`restore` 不做任何事,外层的关闭状态得以延续;只有最外层(进入时中断原本开启)的 `restore` 才会真正开中断。
+2. **状态跟随执行流而不是全局位置。** 标志是调用者栈帧里的局部变量,每个调用点恢复的是自己进入时的状态。这一点在 `proc_run` 中尤为关键:线程 A 在关中断临界区内被切换出去,被换回时从同一临界区的 `local_intr_restore` 处继续,恢复的是 A 自己换出前的中断状态;线程 B 的中断状态保存在 B 自己的栈帧里,互不干扰。若用一个全局变量记录,嵌套调用和跨线程切换都会互相覆盖。
+
+**与调度正确性的关系。** `schedule` 的链表扫描与 `proc_run` 的三步切换(current 更新、satp 切换、`switch_to`)都位于这对宏的临界区内。时钟中断是异步事件,若在"current 已更新、执行现场尚未迁移"的中间态被打断,中断处理程序看到的 current 与实际运行的线程不一致,后续调度决策就会基于错误状态。关中断把这段窗口变成原子区间。代价是临界区必须足够短:关中断期间系统不响应时钟等所有监督态中断,这也是模块实现中把无关工作(如实际切换本身之后的打印)放在临界区之外的原因。
+
+**补充说明。** `sret`/trap 返回路径恢复中断不经过这对宏:`__trapret` 的 `RESTORE_ALL` 从 trapframe 恢复 `sstatus` 整个值(SIE 含在其中),因此 trap 进入/返回用 `SAVE_ALL`/`RESTORE_ALL` 维护现场,而内核代码内的临界区用这对宏,两条机制各管一段。
 
 ---
 
