@@ -6,7 +6,7 @@
 |------|------|
 | **实验名称** | Lab 4:进程管理 |
 | **小组成员** | 2411046-梁家瑞、2412727-刘蔚霖、2411041-李培涛 |
-| **完成日期** | 2026-11-13(骨架导入与分工确认);最终完成日期【待填写】 |
+| **完成日期** | 2026-11-13(骨架导入与分工确认);2026-11-16(三模块合入,集成验收通过) |
 
 ### 小组分工
 
@@ -33,13 +33,11 @@
 
 | 成员 | 环境与工具 | AI 编程工具与模型 |
 |------|------------|-------------------|
-| 成员 A | OS2026 工程、RISC-V 64、`riscv64-unknown-elf-` 工具链、QEMU 4.1.1 | 【待填写】 |
-| 成员 B | macOS、`riscv64-elf-gcc 16.2.0`、QEMU 11.1.2 | 【待填写】 |
+| 成员 A | OS2026 工程、RISC-V 64、`riscv64-unknown-elf-` 工具链、QEMU 4.1.1 | AI 仅用于阅读源码、报告结构整理与文字润色,不生成核心实验代码;底层模型版本未核实 |
+| 成员 B | macOS、`riscv64-elf-gcc 16.2.0`、QEMU 11.1.2 | Codex(底层精确模型版本未核实,不填猜测值) |
 | 成员 C | Fedora、`riscv64-unknown-elf-gcc 15.1.0`、QEMU 4.1.1(本地 `/opt/qemu-4.1.1`) | 【待填写】 |
 
 代码目录:`code/labcodes/lab4/lab4_new`,目标架构 RISC-V 64。
-
-【待完成:各成员实际使用的 AI 编程工具与底层模型版本,开始实现后据实填写。】
 
 ---
 
@@ -47,11 +45,32 @@
 
 ### 3.1 本章节的逻辑主线
 
-【待完成。参考主线:lab4 按"虚拟内存页操作 → 进程创建与初始化 → 进程调度"三条主线展开,执行链为 `kern_init → pmm_init → pic_init/idt_init → vmm_init → proc_init → cpu_idle → schedule → proc_run → switch_to`;前半段把地址空间准备好,后半段让第一个可运行线程真正跑起来。】
+Lab4 在 Lab3 的 Trap 机制上继续实现进程管理。整体分为三层:
+
+1. 虚拟内存页操作:利用页表建立和撤销线性地址到物理页的映射;
+2. 进程创建及初始化:用 PCB、内核栈、TrapFrame 和 Context 描述内核线程;
+3. 进程调度与切换:选择可运行线程并保存、恢复 Context。
+
+执行链为 `kern_init → pmm_init(建立 boot_pgdir,自测 check_pgdir/check_boot_pgdir) → pic_init/idt_init → vmm_init → proc_init(创建 idleproc 与 initproc) → cpu_idle → schedule → proc_run → switch_to`;前半段把地址空间准备好,后半段让第一个可运行线程真正跑起来。
+
+页映射是后续进程创建的基础,页表根地址、内核栈和进程地址空间都依赖正确的页管理:如果引用计数错误,后续回收可能出现悬空页或重复释放;如果修改页表后不刷新 TLB,CPU 可能继续使用旧翻译。
 
 ### 3.2 功能的逐步实现
 
-【待完成:按三个功能模块的依赖顺序说明为什么先做页操作、再做进程创建、最后做调度。】
+三个模块按依赖顺序实现:
+
+1. 先做页操作。`get_pte` 负责定位页表项并按需创建中间页表,`page_insert`/`page_remove` 负责改变叶子 PTE 与物理页引用关系。没有正确的页映射,后续进程创建无法安全分配内核栈与页表。
+2. 再做进程创建。`proc_init → kernel_thread → do_fork → alloc_proc/setup_kstack/copy_mm/copy_thread` 组合出完整的 PCB 与两级现场(TrapFrame 保存完整异常返回现场,Context 只保存调用约定要求的被调用者保存寄存器),线程被登记进进程链表,处于可运行状态但尚未执行。
+3. 最后做调度。`schedule` 选出下一个可运行线程,`proc_run` 在关中断临界区内完成 current 更新、页表切换与 `switch_to` 现场迁移;新线程第一次运行经 `forkret → forkrets → __trapret` 链路进入预定入口。
+
+页操作的调用关系:
+
+```text
+线性地址 la
+  -> get_pte(pgdir, la, create)   得到目标 PTE
+  -> page_insert / page_remove    更新 PTE 和 Page.ref
+  -> tlb_invalidate               让处理器看到最新页表内容
+```
 
 ---
 
@@ -72,11 +91,28 @@ void page_remove(pde_t *pgdir, uintptr_t la);(kern/mm/pmm.c)
 
 #### 最终提示词
 
-【待完成】
+成员 A 的核心代码依据工程现有接口(`get_pte`、`check_pgdir`、`pmm.h` 等)手写实现,AI 仅用于阅读源码与实验要求、梳理函数调用关系、检查报告结构和润色文字,不生成核心实验代码。报告整理使用的四段式提示词见 `prompt.md` 的"Prompt A:成员 A 报告整理 Prompt"章节。
 
 #### 实现迭代过程
 
-【待完成】
+**(1)设计依据:Sv39 页表与 get_pte。** 本工程使用 Sv39 风格的三级页表,有效虚拟地址由三个 9 位 VPN 和 12 位页内偏移组成(`VPN[2]/VPN[1]/VPN[0]/offset`,对应宏 `PDX1/PDX0/PTX/PGOFF`);页表页 4096 字节、页表项 8 字节,每页 512 个页表项。`get_pte(pgdir, la, create)` 的流程:用 `PDX1(la)` 定位根页表一级项,无效且 create 为真时分配下一级页表;再用 `PDX0(la)` 定位第二级项,无效且 create 为真时再分配页表页;最后用 `PTX(la)` 定位叶子 PTE 返回。create 为 0 且中间页表不存在时返回 NULL,不产生分配副作用。
+
+**(2)page_insert 实现。** 把物理页 page 映射到线性地址 la 并设置权限 perm:
+
+1. `get_pte(pgdir, la, 1)` 获取目标 PTE,失败返回 `-E_NO_MEM`;
+2. 若目标已有有效映射,取出旧物理页:旧页就是新页时只更新权限,不改变引用计数(映射数量未变,只是权限变化);
+3. 旧页不同时先 `page_remove` 删除旧映射;
+4. 对新页 `page_ref_inc`,用 `pte_create(page2ppn(page), perm)` 写入新 PTE,`tlb_invalidate` 后返回 0。
+
+**(3)page_remove 实现与集成修复。** 撤销线性地址 la 的有效映射:`get_pte(pgdir, la, 0)` 查询(create=0,保证幂等,对无映射地址安静返回,连续删除不会重复减引用);PTE 有效时取旧物理页,清零 PTE、`tlb_invalidate`、`page_ref_dec`,引用计数归零时调用 `free_page` 将物理页归还空闲列表。
+
+初版实现只在解除映射时递减引用计数,引用计数归零时不释放物理页,理由是"解除一个映射不等于物理页生命周期结束"。集成验收证明该理解与 uCore 的引用计数约定不符:`check_pgdir` 中 `p1`、`p2` 两个测试页解除映射后未归还,结尾的空闲页数守恒断言 `nr_free_store == nr_free_pages()` 失败,内核 panic。在该约定下 `Page.ref` 归零即表示该物理页不再被任何虚页映射、也无调用者持有,必须 `free_page` 归还;引用计数大于零时仅解除本条映射。已按标准语义修复(详见"五、测试与验证"的集成验收小节)。
+
+**(4)实现约束(Spec)。** 前置条件:物理页分配器、`struct Page`、页表宏和 `get_pte` 已存在;`pgdir` 是有效页表根;`page` 是可用物理页。后置条件:插入成功时 la 的有效 PTE 指向 page 且权限等于 perm、引用计数正确;删除后 la 无有效映射、旧页引用减一;中间页表分配失败返回 `-E_NO_MEM`,不留半完成叶子映射;页表修改后旧地址翻译失效。测试用例覆盖:空地址建映射、一页多映射、新页替换旧页、同页同址改权限引用计数不变、删除有效/不存在映射、分配失败路径、删除后再插入。
+
+**(5)实现风险与处理。** 同一物理页重复映射导致引用计数多加:检测旧 PTE 指向页是否就是新页,相同则只更新权限;替换旧页遗留旧映射:先 `page_remove` 再写入新 PTE;查询函数意外创建页表:`page_remove` 使用 create=0;CPU 使用旧 TLB:建立、替换、删除后均调用 `tlb_invalidate`;引用计数归零不释放物理页:即第 (3) 点记录的集成缺陷,已修复。
+
+**(6)验证覆盖。** 工程内 `check_pgdir`、`check_boot_pgdir` 与评分注入的 `test_lab4_pmm_basic` 覆盖:建立映射后经 `get_pte` 能找到目标页、一页多映射、新页替换旧页、同页同址改权限引用计数不增加、删除映射后引用计数恢复、重复删除不出错、`PTE_U`/`PTE_W` 权限正确写入、页表更新后 TLB 失效、空闲页数守恒。最终整机结果见"五、测试与验证"。
 
 ---
 
@@ -103,11 +139,29 @@ static int copy_mm(uint32_t clone_flags, struct proc_struct *proc);(kern/process
 
 #### 实现迭代过程
 
-成员 B 已实现六个函数，详细验收、调用链、失败回收和复现命令见 [成员 B 实现与验证](report-memberB.md)。提示词及实际协作说明已补充。
+成员 B 已实现六个函数,以下验收清单为逐函数的实现要点与验证范围:
 
-`alloc_proc` 清零 PCB（进程控制块），设置未初始化态、无效 PID、共享内核页表物理地址，并初始化两个链表节点。`proc_init` 将启动现场包装成 PID 0 的 idleproc，再通过 kernel_thread 创建 PID 1 的 initproc。`kernel_thread` 依照 entry.S 将函数和参数放入 s0/s1，设置 SPP/SPIE 并清除 SIE。`copy_thread` 将 trapframe（陷阱帧）复制到独立内核栈顶，设置子线程 a0=0 和 forkret 入口。`copy_mm` 明确断言父线程没有用户地址空间。`do_fork` 在资源准备完成后关中断分配 PID、登记哈希/链表、计数并唤醒；分配失败只回收已取得的资源。
+| 函数 | 实现要点 | 验证范围 |
+|------|----------|----------|
+| `alloc_proc` | 整块清零,pid=-1,PROC_UNINIT,pgdir=`boot_pgdir_pa`,链表节点自环;注入 kmalloc 失败返回 NULL | 宿主实测 |
+| `proc_init` | 初始化全局链表和哈希桶;idle PID 0,启动栈、need_resched=1、current、计数 1;创建并查找 init PID 1,设置名称,失败 panic | 正常路径宿主实测,panic 路径代码检查 |
+| `kernel_thread` | s0 存函数、s1 存参数;SPP/SPIE=1、SIE=0;epc=`kernel_thread_entry` | 字段实测与汇编核对 |
+| `copy_thread` | 288 字节陷阱帧位于 8192 字节栈顶;16 字节对齐;a0=0;默认 sp 指向陷阱帧;显式 stack 被保留 | 宿主实测 |
+| `do_fork` | 数量上限、PCB/栈分配、父子关系、发布顺序、PID 与计数 | 成功及两种分配失败实测 |
+| `copy_mm` | 断言 current->mm==NULL,子 mm=NULL;不复制用户空间 | 正常路径实测;约束代码检查 |
+| 首次执行 | context.ra=`forkret`、context.sp=tf;后续由模块三的切换恢复 | 字段验证通过;真实 CPU 执行已在集成后经 `make qemu`/`make grade` 验证(见第五节) |
 
-实际修正：隔离测试初版的 static_assert 与宿主头文件重名，增加 undef；增强评分断言时补上 riscv.h；注入编译发现原测试线程返回 void 与 kernel_thread 的 int 返回值接口不符，修正测试函数签名（死循环行为不变）。没有修改评分标准或降低断言。
+概要流程:`alloc_proc` 清零 PCB(进程控制块),设置未初始化态、无效 PID、共享内核页表物理地址,并初始化两个链表节点;`proc_init` 将启动现场包装成 PID 0 的 idleproc,再通过 kernel_thread 创建 PID 1 的 initproc;`kernel_thread` 依照 entry.S 将函数和参数放入 s0/s1,设置 SPP/SPIE 并清除 SIE;`copy_thread` 将 trapframe(陷阱帧)复制到独立内核栈顶,设置子线程 a0=0 和 forkret 入口;`copy_mm` 明确断言父线程没有用户地址空间;`do_fork` 在资源准备完成后关中断分配 PID、登记哈希/链表、计数并唤醒,分配失败只回收已取得的资源。
+
+**关键设计约定。** idle 不进入普通进程链表或 PID 哈希,`find_proc` 只接受正 PID;idle 计入 `nr_process`,调度器无普通可运行线程时以 idle 保底。所有线程共享内核页表,`pgdir` 保存物理地址而非 satp 编码,模块三切换时必须使用 Sv39 编码,不可调用 Sv32 遗留 `lsatp`。
+
+**创建到首次运行的链路。** `proc_init → kernel_thread → do_fork → alloc_proc/setup_kstack/copy_mm/copy_thread → 分配 PID、挂接、计数、wakeup_proc`,初始化期间 current 始终为 idle。集成后 `switch_to` 恢复 context.ra/sp 进入 `forkret`;`forkrets` 将 sp 指向 current->tf;`__trapret` 恢复寄存器和 CSR,sret 根据 SPP 进入 S 模式、根据 SPIE 恢复中断;epc 指向 `kernel_thread_entry`,该入口把 s1 搬到 a0 并 `jalr s0` 执行线程函数(如 init_main)。函数返回后进入 `do_exit`,当前骨架的 `do_exit` 会 panic,这是预期终点而非完整退出回收实现。Context 只保存调用约定要求的返回地址、栈和被调用者保存寄存器,trapframe 保存完整异常返回现场,这是两种不同用途的保存层次。
+
+**失败回滚与发布顺序。** 达到 MAX_PROCESS 返回 `-E_NO_FREE_PROC`;PCB 分配失败返回 `-E_NO_MEM`;栈分配失败释放 PCB;copy_mm 将来若返回错误,先释放栈再释放 PCB(当前 copy_mm 只有成功或断言失败,该错误分支为后续扩展保留,未声称已注入测试)。所有可失败步骤在挂接前完成,避免失败留下半个进程;发布阶段关中断,先挂接再唤醒。本实验单核、无创建过程抢占。`set_proc_name` 原接口固定复制 15 字节,idle/init 名称使用足够长的静态数组,避免从短字符串字面量越界读取。
+
+**本地隔离验证(集成前,2026-11-13)。** 在 `code/labcodes/lab4/lab4_new` 运行 `python3 tools/check_member_b.py`,输出 `member B: PCB, init, publication, trapframe, PID and allocation rollback PASS`。脚本读取实际 proc.c、proc.h、trap.h、list.h,在临时目录编译运行,只替换内存分配、CSR、中断和汇编入口等外部依赖;分配器先填 0xa5 防止零内存掩盖初始化缺失,检查失败前后资源计数和链表不变,唤醒替身验证线程已登记。该脚本不执行 RISC-V 指令,不证明页表或调度正确;集成前的整机构建因模块一/三未合入而链接失败,未获得整机 QEMU 输出,三模块合入后的整机验证见第五节集成验收。
+
+**实际修正。** 隔离测试初版的 static_assert 与宿主头文件重名,增加 undef;增强评分断言时补上 riscv.h;注入编译发现原测试线程返回 void 与 kernel_thread 的 int 返回值接口不符,修正测试函数签名并补不可达 `return 0` 以满足返回值检查(死循环行为不变)。没有修改评分标准或降低断言。
 
 
 ---
@@ -218,7 +272,9 @@ static inline void __intr_restore(bool flag) {
 
 **负责人:** 2411046-梁家瑞
 
-【待完成:结合 sv32/sv39/sv48 三种分页模式的异同,解释 `get_pte()` 中两段形式相似代码的成因;讨论把页表项查找与页表页分配合并在一个函数里是否合适、有无必要拆分。】
+**两段形式相似代码的成因。** Sv32、Sv39、Sv48 都采用多级页表,每一级重复相同的抽象流程:从虚拟地址取出当前级 VPN;用 VPN 作为页表数组下标;检查页表项有效位;缺失且允许创建时分配下一级页表;从页表项取出下一级页表物理地址;继续遍历。所以 `get_pte()` 中"一级到二级"和"二级到三级"的代码结构相似,只是层级和索引宏不同。Sv32 通常两级,Sv39 三级,Sv48 四级;遍历次数不同,但"检查、创建、进入下一级"的逻辑不变。当前工程的 Sv39 地址划分为 PDX1、PDX0、PTX 和 PGOFF,分别对应 VPN[2]、VPN[1]、VPN[0] 和页内偏移。
+
+**查找与分配是否应拆分。** 当前 `get_pte()` 通过 create 参数同时支持两种行为:create 为 0 时只查找,不产生副作用;create 为 1 时查找并按需创建中间页表。优点是接口简单,`page_insert` 可以直接请求"确保 PTE 存在",`get_page` 和 `page_remove` 可以请求"只查询"。缺点是查找和分配的副作用集中在一个函数中,调用者必须正确传递 create;如果中间层分配到一半失败,还要考虑已分配页表页的回收。更复杂的内核可以拆成 `find_pte` 和 `create_pte`:前者只查找,后者负责分配,语义更清晰、测试更容易,但接口和代码更多。当前教学工程的 create 参数是简洁性和功能完整性之间的折中。
 
 ---
 
@@ -246,7 +302,7 @@ static inline void __intr_restore(bool flag) {
 - 链接阶段按预期失败,未定义符号恰好为 4 个练习函数:`page_insert`、`page_remove`(功能模块一)、`proc_init`(功能模块二)、`cpu_idle`(功能模块三);三个功能模块实现后链接闭环。
 - `make qemu`/`make grade` 待功能模块实现后执行。
 
-**骨架附带测试设施说明:** `tools/test_lab4.c` 提供 `test_lab4_pmm_basic`、`test_lab4_process_create`、`test_lab4_schedule` 三个测试函数(对应 `make grade` 的 `[Test PMM]/[Test Process Create]/[Test Schedule]` 三项),但上游骨架中没有任何调用点,`tools/` 目录也不在内核构建路径内;测试挂接属于本实验实现内容,由各模块实现时一并完成。
+**骨架附带测试设施说明:** `tools/test_lab4.c` 提供 `test_lab4_pmm_basic`、`test_lab4_process_create`、`test_lab4_schedule` 三个测试函数(对应 `make grade` 的 `[Test PMM]/[Test Process Create]/[Test Schedule]` 三项),上游骨架中没有任何调用点,`tools/` 目录也不在内核构建路径内。后续核查确认:`make grade` 会先调用 `tools/inject.py` 把三个测试注入临时副本(`pmm_init` 尾部、`proc_init` 尾部、`init_main` 开头)再编译评分,因此不需要在工程内手动添加永久挂接,普通构建不含这些测试属正常行为。
 
 ### 集成验收(2026-11-16,成员 C)
 
@@ -291,13 +347,30 @@ Total Score: 30/30
 
 ### 对操作系统的理解
 
-1. 【待完成:本实验重要知识点与 OS 原理对应关系,例如页表映射维护/引用计数/TLB 一致性、PCB 与线程生命周期、上下文切换的两级现场、调度原子性。】
-2. 【待完成:OS 原理中重要但本实验未覆盖的知识点,例如页面置换、按需调页、用户态进程隔离、负载均衡与优先级调度等。】
+本实验的核心不变量贯穿三个模块:每个有效叶子 PTE 都对应一个真实物理页,该物理页的引用计数包含这条映射;PTE 被替换或删除时,旧引用同步减少、新引用同步增加,引用计数归零即归还物理页。`get_pte` 负责把线性地址转换为 PTE 地址,`page_insert`/`page_remove` 负责建立与撤销关系,`tlb_invalidate` 负责让处理器看到最新页表内容。虚拟内存不是单独的地址转换函数,而是页表结构、物理页生命周期、访问权限和硬件缓存共同组成的管理机制。
+
+实验知识点与 OS 原理的对应关系:
+
+| 实验知识点 | OS 原理含义 | 实验体现 |
+|---|---|---|
+| 虚拟内存 | 为程序提供独立、连续且受保护的地址空间抽象 | 线性地址通过页表映射到物理页 |
+| 多级页表 | 用树形结构减少页表常驻开销 | Sv39 的 PDX1、PDX0、PTX |
+| 页表项 | 记录物理页号、权限和有效位 | pte_create、PTE_V/PTE_U/PTE_W |
+| 引用计数 | 记录物理页仍被多少映射使用 | page_ref_inc/page_ref_dec,归零释放 |
+| TLB | 缓存虚拟页到物理页的翻译 | tlb_invalidate(`sfence.vma`) |
+| 按需分配页表 | 使用虚拟区域时才创建中间页表 | get_pte 的 create 参数 |
+| PCB 与线程生命周期 | 进程控制块描述与状态机 | alloc_proc 字段、PROC_UNINIT/RUNNABLE 状态迁移 |
+| 两级现场 | 上下文切换与异常返回需要不同粒度的保存 | Context 保存被调用者保存寄存器,trapframe 保存完整异常返回现场 |
+| 调度原子性 | 调度决策与现场迁移不可被中断打断 | local_intr_save/restore 临界区保护 schedule 与 proc_run |
+
+OS 原理中重要但本实验未直接覆盖的知识点:缺页异常和按需调页、页面置换算法和交换分区、Copy-on-Write、多核 TLB shootdown、用户/内核地址空间隔离、大页与页表压缩、NUMA 内存分配、内存映射文件和共享内存、wait/exit 完整进程回收(`do_exit` 仍是骨架 panic 占位)、负载均衡与优先级调度。
 
 ### AI 协作开发的经验
 
-【待完成】
+三位成员采用了三种不同的 AI 协作模式,各有适用边界:
 
-### 成员 B 验证补充（2026-11-13）
+1. **成员 A:AI 仅做阅读与润色。** 核心代码依据工程现有接口手写,AI 用于梳理调用关系、检查报告结构。边界清晰,代码理解完全归属本人,代价是报告整理的提示词也需要遵守"不虚构测试结果"的约束。
+2. **成员 B:AI 实现核心代码,辅以独立验证脚本。** 由 Codex 实现六个函数,同时编写 `check_member_b.py` 隔离验证(0xa5 填充防零内存掩盖、检查资源计数回滚)。经验是:AI 生成的代码必须配套独立验证手段,且提示词记录要区分"实际使用的生成提示词"与"事后补充的规范提示词",不能把后者描述为前者。
+3. **成员 C:四段式结构化提示词驱动实现。** 按 `[PROMPT]`/`[RELY]`/`[GUARANTEE]`/`[SPECIFICATION]` 结构组织提示词,接口与字段事实均从工程当前代码核对,并用不提交的本地桩先行联调,桩的简化(如运行期中断关闭)明确标注而非混入内核结论。
 
-[详细验证记录](report-memberB.md)。重新核查发现 `make grade` 已调用 `tools/inject.py`，会在临时副本挂接三个测试；上面的“没有任何调用点”仅适用于普通构建，不能据此重复添加永久挂接。B 增强了创建测试断言。完整 QEMU/grade 仍待 A/C 模块完成。
+共同教训是证据边界:集成验收发现的 `page_remove` 页泄漏缺陷说明,任何"实现完成"的判断都必须以真实整机构建与守恒断言为准,本地桩或隔离验证的通过不能替代整机验证。
