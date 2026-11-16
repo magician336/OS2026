@@ -248,7 +248,42 @@ static inline void __intr_restore(bool flag) {
 
 **骨架附带测试设施说明:** `tools/test_lab4.c` 提供 `test_lab4_pmm_basic`、`test_lab4_process_create`、`test_lab4_schedule` 三个测试函数(对应 `make grade` 的 `[Test PMM]/[Test Process Create]/[Test Schedule]` 三项),但上游骨架中没有任何调用点,`tools/` 目录也不在内核构建路径内;测试挂接属于本实验实现内容,由各模块实现时一并完成。
 
-【待完成:功能模块实现后的 `make qemu` 输出与 `make grade` 通过截图,引用 `./images/` 相对路径。】
+### 集成验收(2026-11-16,成员 C)
+
+三个功能模块合入后执行完整集成验收,流程与结果如下:
+
+**验收中发现并修复的缺陷:** 合入成员 A 的页操作实现后,`make qemu` 在 `check_pgdir()` 结尾触发 `kernel panic at kern/mm/pmm.c:395: assertion failed: nr_free_store == nr_free_pages()`。原因是 `page_remove()` 仅递减引用计数并清空 PTE,引用计数归零时未调用 `free_page()` 归还物理页,导致 `check_pgdir` 中 `p1`、`p2` 两个测试页泄漏,空闲页数无法恢复初值。修复方式为按 uCore 标准语义在 `page_remove()` 中补充"引用计数归零即释放物理页"分支(`code/labcodes/lab4/lab4_new/kern/mm/pmm.c`),修复后 `check_pgdir()`、`check_boot_pgdir()` 均通过。
+
+**修复后 `make qemu` 关键输出:**
+
+```text
+check_alloc_page() succeeded!
+check_pgdir() succeeded!
+check_boot_pgdir() succeeded!
+use SLOB allocator
+kmalloc_init() succeeded!
+check_vma_struct() succeeded!
+check_vmm() succeeded.
+++ setup timer interrupts
+this initproc, pid = 1, name = "init"
+To U: "Hello world!!".
+To U: "en.., Bye, Bye. :)"
+kernel panic at kern/process/proc.c:208:
+    process exit!!.
+```
+
+末行的 `process exit!!` 为上游骨架 `do_exit()` 的原始占位断言:lab4 不要求实现完整的进程退出/回收机制,`init_main` 打印结束语后进入该 panic 属于本实验的预期终点,不是缺陷。
+
+**`make grade` 结果(评分脚本经 `tools/inject.py` 自动挂接三个测试):**
+
+```text
+  -check PMM:                                OK
+  -check Process Create:                     OK
+  -check Schedule:                           OK
+Total Score: 30/30
+```
+
+【待完成:上述 `make qemu` 运行与 `make grade` 30/30 的终端截图,引用 `./images/` 相对路径。】
 
 ---
 

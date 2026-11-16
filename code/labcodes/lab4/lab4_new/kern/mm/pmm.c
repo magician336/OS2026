@@ -316,9 +316,13 @@ void page_remove(pde_t *pgdir, uintptr_t la)
     }
 
     struct Page *page = pte2page(*ptep);
-    page_ref_dec(page);
     *ptep = 0;
     tlb_invalidate(pgdir, la);
+    // 引用计数归零说明该物理页不再被任何虚页映射,归还空闲列表
+    if (page_ref_dec(page) == 0)
+    {
+        free_page(page);
+    }
 }
 // invalidate a TLB entry, but only if the page tables being
 // edited are the ones currently in use by the processor.
