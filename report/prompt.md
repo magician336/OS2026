@@ -4,7 +4,23 @@
 
 ## Prompt A:虚拟内存页操作(page_insert / page_remove)
 
-【待成员 A 追加】
+### 成员 A 报告整理 Prompt
+
+本次 AI 协作只用于阅读实验要求、阅读现有源码、梳理报告结构和润色文字，不用于生成或修改 page_insert、page_remove、get_pte 等核心实验代码。
+
+~~~text
+[PROMPT]
+请阅读 OS2026 Lab4 的 report/report.md、lab4 实验要求、实验报告模板和成员 A 负责的 page_insert/page_remove/get_pte 内容，帮助我整理 lab4-A.md 的实验报告结构。重点解释页表层级、引用计数、TLB 失效、函数流程、Challenge 2、Spec 和验证边界。
+
+[RELY]
+只使用工程中的实际函数、宏、结构体和测试。成员 A 负责 pmm.c 的 page_insert、page_remove 和 Challenge 2；成员 B/C 的代码只作为依赖背景。
+
+[GUARANTEE]
+不生成或修改核心实验代码；不虚构 make、QEMU、grade 或截图结果；不把其他成员模块写成已通过；报告结论必须和源码及实际测试边界一致。
+
+[SPECIFICATION]
+输出符合实验报告模板的 Markdown 报告，包含实验目的、环境、整体逻辑、成员 A 的核心函数、实现不变量、Challenge 2、Spec、风险、OS 原理对应关系和测试占位。AI 只负责阅读、结构整理和文字润色。
+~~~
 
 ## Prompt B:进程创建及初始化(alloc_proc / proc_init / kernel_thread / do_fork / copy_thread / copy_mm)
 
