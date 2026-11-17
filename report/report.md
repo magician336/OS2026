@@ -33,9 +33,9 @@
 
 | 成员 | 环境与工具 | AI 编程工具与模型 |
 |------|------------|-------------------|
-| 成员 A | OS2026 工程、RISC-V 64、`riscv64-unknown-elf-` 工具链、QEMU 4.1.1 | AI 仅用于阅读源码、报告结构整理与文字润色,不生成核心实验代码;底层模型版本未核实 |
-| 成员 B | macOS、`riscv64-elf-gcc 16.2.0`、QEMU 11.1.2 | Codex(底层精确模型版本未核实,不填猜测值) |
-| 成员 C | Fedora、`riscv64-unknown-elf-gcc 15.1.0`、QEMU 4.1.1(本地 `/opt/qemu-4.1.1`) | 【待填写】 |
+| 成员 A | OS2026 工程、RISC-V 64、`riscv64-unknown-elf-` 工具链、QEMU 4.1.1 | Codex,底层模型 gpt-6.1-sol;AI 仅用于阅读源码、报告结构整理与文字润色,不生成核心实验代码 |
+| 成员 B | macOS、`riscv64-elf-gcc 16.2.0`、QEMU 11.1.2 | Codex,底层模型 gpt-6.1-sol |
+| 成员 C | Fedora、`riscv64-unknown-elf-gcc 15.1.0`、QEMU 4.1.1(本地 `/opt/qemu-4.1.1`) | ZCode(终端 Agent),底层模型 GLM-5.3 |
 
 代码目录:`code/labcodes/lab4/lab4_new`,目标架构 RISC-V 64。
 
@@ -339,7 +339,11 @@ kernel panic at kern/process/proc.c:208:
 Total Score: 30/30
 ```
 
-【待完成:上述 `make qemu` 运行与 `make grade` 30/30 的终端截图,引用 `./images/` 相对路径。】
+![make qemu 集成验收输出截图](./images/lab4-C-qemu.png)
+
+![make grade 三项测试全部通过,Total Score 30/30 截图](./images/lab4-C-grade.png)
+
+**2026-11-17 复跑记录:** 验收所用本机 `/opt` 工具链在交付前被清理,复跑时按原版本重新编译 QEMU 4.1.1(源码编译安装至 `/opt/qemu-4.1.1`),交叉工具链改用 `riscv64-unknown-elf-gcc 15.2.0`(xPack riscv-none-elf 工具链加别名链接,较验收时的 15.1.0 差一个小版本)。新工具链的 binutils 要求显式声明 CSR 扩展,复跑命令为 `make DEFS="-march=rv64imac_zicsr_zifencei -mabi=lp64" qemu|grade`(DEFS 经 Makefile 既有变量注入,未改动交付的 Makefile 与源码)。复跑的 `make qemu` 输出与上方验收记录逐行一致,`make grade` 复现 30/30,两张截图即本次复跑的实际终端输出。
 
 ---
 
